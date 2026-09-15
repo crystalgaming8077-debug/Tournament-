@@ -9,48 +9,78 @@ const ROOT = __dirname;
 const HTML = path.join(ROOT, 'AKTan_Tournament_PointCalc_AKTAN_V25_PUBLIC_SPECTATOR.html');
 const DATA_FILE = path.join(ROOT, 'public-data.json');
 
-function loadDB(){
+let db = { publications: {} };
+let pg = null;
+let readyPromise = null;
+
+function loadFileDB(){
   try { return JSON.parse(fs.readFileSync(DATA_FILE,'utf8')); }
   catch { return {publications:{}}; }
 }
-let db = loadDB();
-function saveDB(){ fs.writeFileSync(DATA_FILE, JSON.stringify(db,null,2)); }
+function saveFileDB(){ fs.writeFileSync(DATA_FILE, JSON.stringify(db,null,2)); }
+
+async function initStore(){
+  if (!process.env.DATABASE_URL) {
+    db = loadFileDB();
+    return;
+  }
+  const { Pool } = require('pg');
+  pg = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 5 });
+  await pg.query(`CREATE TABLE IF NOT EXISTS aktan_publications (
+    token TEXT PRIMARY KEY,
+    admin_key TEXT NOT NULL,
+    state JSONB NOT NULL,
+    registrations JSONB NOT NULL DEFAULT '[]'::jsonb,
+    updated_at BIGINT NOT NULL
+  )`);
+  const rows = await pg.query('SELECT token, admin_key, state, registrations, updated_at FROM aktan_publications');
+  if (!rows.rows.length) {
+    const local = loadFileDB();
+    for (const pub of Object.values(local.publications || {})) {
+      await pg.query('INSERT INTO aktan_publications(token,admin_key,state,registrations,updated_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(token) DO NOTHING', [pub.token,pub.adminKey,pub.state,JSON.stringify(pub.registrations||[]),pub.updatedAt||Date.now()]);
+    }
+  }
+  await refreshDBFromPostgres();
+}
+async function refreshDBFromPostgres(){
+  if(!pg)return;
+  const rows=await pg.query('SELECT token,admin_key,state,registrations,updated_at FROM aktan_publications');
+  db={publications:{}};
+  for(const r of rows.rows) db.publications[r.token]={token:r.token,adminKey:r.admin_key,state:r.state,registrations:r.registrations||[],updatedAt:Number(r.updated_at)};
+}
+async function persistPublication(pub){
+  if(!pg){ saveFileDB(); return; }
+  await pg.query('INSERT INTO aktan_publications(token,admin_key,state,registrations,updated_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(token) DO UPDATE SET admin_key=EXCLUDED.admin_key,state=EXCLUDED.state,registrations=EXCLUDED.registrations,updated_at=EXCLUDED.updated_at', [pub.token,pub.adminKey,pub.state,JSON.stringify(pub.registrations||[]),pub.updatedAt||Date.now()]);
+}
+function ready(){ return readyPromise || (readyPromise=initStore()); }
+
 function json(res,status,data){
   const body=JSON.stringify(data);
   res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type, X-Admin-Key','Access-Control-Allow-Methods':'GET,POST,PUT,DELETE,OPTIONS','Cache-Control':'no-store'});
   res.end(body);
 }
 function readBody(req){return new Promise((resolve,reject)=>{let b='';req.on('data',c=>{b+=c;if(b.length>8e6)req.destroy();});req.on('end',()=>{try{resolve(b?JSON.parse(b):{})}catch(e){reject(e)}});req.on('error',reject)})}
-function safeState(s){
-  if(!s || typeof s!=='object') return null;
-  const x=JSON.parse(JSON.stringify(s));
-  delete x.adminPin; delete x.publicMode;
-  return x;
-}
+function safeState(s){if(!s||typeof s!=='object')return null;const x=JSON.parse(JSON.stringify(s));delete x.adminPin;delete x.publicMode;return x;}
 function auth(pub,req){return String(req.headers['x-admin-key']||'')===pub.adminKey}
 function clean(v,max=60){return String(v||'').trim().slice(0,max)}
 function makeToken(){return crypto.randomBytes(18).toString('base64url')}
 function makeKey(){return crypto.randomBytes(24).toString('base64url')}
-function origin(req){
-  const proto=(req.headers['x-forwarded-proto']||'http').split(',')[0];
-  const host=req.headers['x-forwarded-host']||req.headers.host||`localhost:${PORT}`;
-  return `${proto}://${host}`;
-}
+function origin(req){const proto=(req.headers['x-forwarded-proto']||'http').split(',')[0];const host=req.headers['x-forwarded-host']||req.headers.host||`localhost:${PORT}`;return `${proto}://${host}`}
 
 const server=http.createServer(async (req,res)=>{
   if(req.method==='OPTIONS'){res.writeHead(204,{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type, X-Admin-Key','Access-Control-Allow-Methods':'GET,POST,PUT,DELETE,OPTIONS'});return res.end()}
-  const u=new URL(req.url,`http://${req.headers.host||'localhost'}`);
   try{
+    await ready();
+    const u=new URL(req.url,`http://${req.headers.host||'localhost'}`);
     if(req.method==='POST' && u.pathname==='/api/public/create'){
-      const b=await readBody(req);const state=safeState(b.state);if(!state)return json(res,400,{error:'Invalid tournament state'});
-      const token=makeToken(),adminKey=makeKey();
-      db.publications[token]={token,adminKey,state,registrations:[],updatedAt:Date.now()};saveDB();
+      const b=await readBody(req),state=safeState(b.state);if(!state)return json(res,400,{error:'Invalid tournament state'});
+      const token=makeToken(),adminKey=makeKey(),pub={token,adminKey,state,registrations:[],updatedAt:Date.now()};db.publications[token]=pub;await persistPublication(pub);
       return json(res,200,{token,adminKey,url:origin(req)+'/?publicToken='+encodeURIComponent(token)});
     }
     let m=u.pathname.match(/^\/api\/public\/([^/]+)\/state$/);
     if(m){const pub=db.publications[m[1]];if(!pub)return json(res,404,{error:'Public tournament not found'});
       if(req.method==='GET')return json(res,200,{state:pub.state,updatedAt:pub.updatedAt});
-      if(req.method==='PUT'){if(!auth(pub,req))return json(res,403,{error:'Invalid admin key'});const b=await readBody(req),state=safeState(b.state);if(!state)return json(res,400,{error:'Invalid state'});pub.state=state;pub.updatedAt=Date.now();saveDB();return json(res,200,{ok:true,updatedAt:pub.updatedAt});}
+      if(req.method==='PUT'){if(!auth(pub,req))return json(res,403,{error:'Invalid admin key'});const b=await readBody(req),state=safeState(b.state);if(!state)return json(res,400,{error:'Invalid state'});pub.state=state;pub.updatedAt=Date.now();await persistPublication(pub);return json(res,200,{ok:true,updatedAt:pub.updatedAt});}
     }
     m=u.pathname.match(/^\/api\/public\/([^/]+)\/register$/);
     if(m && req.method==='POST'){
@@ -61,21 +91,17 @@ const server=http.createServer(async (req,res)=>{
       const need=mode==='solo'?1:mode==='duo'?2:4;
       if((cfg.team&&mode!=='solo'&&!team)||(cfg.phone&&!phone)||(cfg.logo&&!logo)||(cfg.players&&(players.length<need||players.slice(0,need).some(x=>!x))))return json(res,400,{error:'Registration does not match the organizer format'});
       const identity=(team||players[0]).toLowerCase();
-      const exists=(pub.state.teams||[]).some(t=>String(t.name||'').trim().toLowerCase()===identity) || pub.registrations.some(r=>String(r.team||r.players?.[0]||'').toLowerCase()===identity);
+      const exists=(pub.state.teams||[]).some(t=>String(t.name||'').trim().toLowerCase()===identity)||pub.registrations.some(r=>String(r.team||r.players?.[0]||'').toLowerCase()===identity);
       if(exists)return json(res,409,{error:'This team/player name is already registered or pending'});
-      const r={id:makeToken(),mode,team,captain:captain||players[0],players,phone,logo,createdAt:Date.now()};pub.registrations.push(r);saveDB();return json(res,201,{ok:true,id:r.id});
+      const r={id:makeToken(),mode,team,captain:captain||players[0],players,phone,logo,createdAt:Date.now()};pub.registrations.push(r);pub.updatedAt=Date.now();await persistPublication(pub);return json(res,201,{ok:true,id:r.id});
     }
     m=u.pathname.match(/^\/api\/admin\/([^/]+)\/registrations$/);
     if(m && req.method==='GET'){const pub=db.publications[m[1]];if(!pub)return json(res,404,{error:'Public tournament not found'});if(!auth(pub,req))return json(res,403,{error:'Invalid admin key'});return json(res,200,{registrations:pub.registrations});}
     m=u.pathname.match(/^\/api\/admin\/([^/]+)\/registrations\/([^/]+)$/);
-    if(m && req.method==='DELETE'){const pub=db.publications[m[1]];if(!pub)return json(res,404,{error:'Public tournament not found'});if(!auth(pub,req))return json(res,403,{error:'Invalid admin key'});const i=pub.registrations.findIndex(r=>r.id===m[2]);if(i<0)return json(res,404,{error:'Registration not found'});const r=pub.registrations.splice(i,1)[0];saveDB();return json(res,200,{registration:r});}
-
-    // Serve the app for root and public links.
-    if(req.method==='GET' && (u.pathname==='/' || u.pathname==='/index.html')){
-      const html=fs.readFileSync(HTML);res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});return res.end(html);
-    }
-    if(req.method==='GET' && u.pathname==='/health')return json(res,200,{ok:true,publications:Object.keys(db.publications).length});
+    if(m && req.method==='DELETE'){const pub=db.publications[m[1]];if(!pub)return json(res,404,{error:'Public tournament not found'});if(!auth(pub,req))return json(res,403,{error:'Invalid admin key'});const i=pub.registrations.findIndex(r=>r.id===m[2]);if(i<0)return json(res,404,{error:'Registration not found'});const r=pub.registrations.splice(i,1)[0];pub.updatedAt=Date.now();await persistPublication(pub);return json(res,200,{registration:r});}
+    if(req.method==='GET'&&(u.pathname==='/'||u.pathname==='/index.html')){const html=fs.readFileSync(HTML);res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});return res.end(html)}
+    if(req.method==='GET'&&u.pathname==='/health')return json(res,200,{ok:true,publications:Object.keys(db.publications).length,database:!!pg});
     res.writeHead(404,{'Content-Type':'text/plain'});res.end('Not found');
   }catch(e){console.error(e);json(res,500,{error:'Server error: '+e.message})}
 });
-server.listen(PORT,HOST,()=>console.log(`AKTan Public Server running on http://localhost:${PORT}`));
+server.listen(PORT,HOST,()=>console.log(`AKTan Public Server running on port ${PORT} • database ${process.env.DATABASE_URL?'Postgres':'local JSON fallback'}`));

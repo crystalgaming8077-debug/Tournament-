@@ -9,3 +9,11 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 20
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aktan-public-db
+          property: connectionString
+
+databases:
+  - name: aktan-public-db
+    plan: free
