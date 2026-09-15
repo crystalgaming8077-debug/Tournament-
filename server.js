@@ -55,11 +55,15 @@ const server=http.createServer(async (req,res)=>{
     m=u.pathname.match(/^\/api\/public\/([^/]+)\/register$/);
     if(m && req.method==='POST'){
       const pub=db.publications[m[1]];if(!pub)return json(res,404,{error:'Public tournament not found'});const b=await readBody(req);
-      const team=clean(b.team,40),captain=clean(b.captain,40),players=Array.isArray(b.players)?b.players.slice(0,5).map(x=>clean(x,40)):[];
-      if(!team||!captain||players.length<4||players.slice(0,4).some(x=>!x))return json(res,400,{error:'Team, captain and 4 main players are required'});
-      const exists=(pub.state.teams||[]).some(t=>String(t.name||'').trim().toLowerCase()===team.toLowerCase()) || pub.registrations.some(r=>r.team.toLowerCase()===team.toLowerCase());
-      if(exists)return json(res,409,{error:'This team name is already registered or pending'});
-      const r={id:makeToken(),team,captain,players,createdAt:Date.now()};pub.registrations.push(r);saveDB();return json(res,201,{ok:true,id:r.id});
+      const mode=['solo','duo','squad'].includes(String(b.mode||'').toLowerCase())?String(b.mode).toLowerCase():'squad';
+      const team=clean(b.team,40),captain=clean(b.captain,40),phone=clean(b.phone,20),logo=String(b.logo||'').slice(0,3000000),players=Array.isArray(b.players)?b.players.slice(0,5).map(x=>clean(x,40)):[];
+      const required=mode==='solo'?1:mode==='duo'?2:4;
+      if(!phone||!logo||players.length<required||players.slice(0,required).some(x=>!x)||(mode!=='solo'&&!team)||(mode==='squad'&&!captain))return json(res,400,{error:'Please provide the required fields for '+mode.toUpperCase()});
+      if(!/^data:image\/(png|jpeg|webp);base64,/i.test(logo))return json(res,400,{error:'Invalid logo image'});
+      const keyName=mode==='solo'?players[0]:team;
+      const exists=(pub.state.teams||[]).some(t=>String(t.name||'').trim().toLowerCase()===keyName.toLowerCase()) || pub.registrations.some(r=>String(r.team||'').toLowerCase()===keyName.toLowerCase());
+      if(exists)return json(res,409,{error:'This team/player name is already registered or pending'});
+      const r={id:makeToken(),mode,team:keyName,captain:mode==='squad'?captain:players[0],players,phone,logo,createdAt:Date.now()};pub.registrations.push(r);saveDB();return json(res,201,{ok:true,id:r.id});
     }
     m=u.pathname.match(/^\/api\/admin\/([^/]+)\/registrations$/);
     if(m && req.method==='GET'){const pub=db.publications[m[1]];if(!pub)return json(res,404,{error:'Public tournament not found'});if(!auth(pub,req))return json(res,403,{error:'Invalid admin key'});return json(res,200,{registrations:pub.registrations});}
