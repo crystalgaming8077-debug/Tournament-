@@ -1169,6 +1169,34 @@ window.quickReadScreenshot=async function(q){
 };
 </script>
 
+
+<style id="publicRegistrationClickFix">
+/* Mobile/public registration: keep all controls above decorative layers */
+#publicApp,
+#publicApp * { -webkit-tap-highlight-color: transparent; }
+#publicApp #pubRegister,
+#publicApp #pubRegister .publicHero,
+#publicApp #pubRegister .publicCard {
+  position: relative !important;
+  z-index: 500 !important;
+  pointer-events: auto !important;
+}
+#publicApp #pubRegister input,
+#publicApp #pubRegister select,
+#publicApp #pubRegister button,
+#publicApp #pubRegister label {
+  position: relative !important;
+  z-index: 501 !important;
+  pointer-events: auto !important;
+  touch-action: manipulation !important;
+}
+#publicApp #pubRegister input[type="file"] {
+  display: block !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  cursor: pointer !important;
+}
+</style>
 </head>
 <body>
 <header><h1>AKTan Tournament pointcalc</h1><div class="sub">Professional Free Fire Tournament Manager</div></header>
@@ -2532,15 +2560,44 @@ load();ensurePrize();S.aktanLogo=S.aktanLogo||'';limitOrganizerNoteWords(documen
   window.createPublicShare=async function(){try{syncSetupFromInputs();const d=await publicApi('/api/public/create',{method:'POST',body:JSON.stringify({state:S})});publicToken=d.token;publicAdminKey=d.adminKey;localStorage.setItem(PUB_TOKEN_KEY,publicToken);localStorage.setItem(PUB_ADMIN_KEY,publicAdminKey);setPublicUI('✓ Public link created. Publish whenever you want to send the latest leaderboard/slots to spectators.');await publishPublicShare();}catch(e){setPublicUI('⚠ '+e.message+' — Start the included server first.')}};
   window.publishPublicShare=async function(){if(!publicToken||!publicAdminKey){setPublicUI('Create the public link first.');return}try{syncSetupFromInputs();await publicApi('/api/public/'+encodeURIComponent(publicToken)+'/state',{method:'PUT',headers:{'X-Admin-Key':publicAdminKey},body:JSON.stringify({state:S})});setPublicUI('✓ Published '+new Date().toLocaleTimeString()+'. Public viewers will see the latest data.');await loadPendingPublicRegistrations();}catch(e){setPublicUI('⚠ Publish failed: '+e.message)}};
   window.copyPublicShare=async function(){const v=document.getElementById('publicLinkBox')?.value;if(!v){setPublicUI('Create the public link first.');return}try{await navigator.clipboard.writeText(v);setPublicUI('✓ Public link copied.')}catch(e){prompt('Copy this public link:',v)}};
-  window.publicRegModeChanged=function(){const mode=document.getElementById('pubRegMode')?.value||'squad';const team=document.getElementById('pubRegTeamWrap'),capt=document.getElementById('pubRegCaptainWrap'),players=document.getElementById('pubRegPlayers');if(team)team.style.display=mode==='solo'?'none':'block';if(capt)capt.style.display=mode==='squad'?'block':'none';if(players){players.innerHTML=mode==='solo'?'<div><label>Player Name *</label><input id="pubRegP1" maxlength="40" placeholder="Enter player name"></div>':mode==='duo'?'<div class="grid g2"><div><label>Player 1 *</label><input id="pubRegP1" maxlength="40"></div><div><label>Player 2 *</label><input id="pubRegP2" maxlength="40"></div></div>':'<div class="grid g2"><div><label>Player 1 *</label><input id="pubRegP1" maxlength="40"></div><div><label>Player 2 *</label><input id="pubRegP2" maxlength="40"></div><div><label>Player 3 *</label><input id="pubRegP3" maxlength="40"></div><div><label>Player 4 *</label><input id="pubRegP4" maxlength="40"></div><div><label>Substitute (optional)</label><input id="pubRegP5" maxlength="40"></div></div>';}};
-  window.publicRegLogoData='';
-  window.publicRegLogoChanged=function(input){const f=input?.files?.[0];if(!f){publicRegLogoData='';return}if(f.size>2*1024*1024){input.value='';publicRegLogoData='';document.getElementById('pubRegStatus').textContent='⚠ Logo must be 2 MB or smaller.';return}const r=new FileReader();r.onload=()=>{publicRegLogoData=r.result||'';document.getElementById('pubRegLogoPreview').src=publicRegLogoData;document.getElementById('pubRegLogoPreview').style.display='block'};r.readAsDataURL(f)};
-  window.submitPublicRegistration=async function(){const token=new URLSearchParams(location.search).get('publicToken');if(!token){document.getElementById('pubRegStatus').textContent='Registration link is not active.';return}const mode=document.getElementById('pubRegMode')?.value||'squad',team=document.getElementById('pubRegTeam')?.value.trim()||'',captain=document.getElementById('pubRegCaptain')?.value.trim()||'',phone=document.getElementById('pubRegPhone')?.value.trim()||'',players=['P1','P2','P3','P4','P5'].map(k=>document.getElementById('pubReg'+k)?.value.trim()||'');const needed=mode==='solo'?1:mode==='duo'?2:4;if((mode!=='solo'&&!team)||!players.slice(0,needed).every(Boolean)||!phone||!publicRegLogoData||(mode==='squad'&&!captain)){document.getElementById('pubRegStatus').textContent='⚠ Please complete all required fields for '+mode.toUpperCase()+'.';return}if(!/^[0-9+()\-\s]{7,20}$/.test(phone)){document.getElementById('pubRegStatus').textContent='⚠ Enter a valid phone number.';return}try{await publicApi('/api/public/'+encodeURIComponent(token)+'/register',{method:'POST',body:JSON.stringify({mode,team:mode==='solo'?players[0]:team,captain:mode==='squad'?captain:players[0],players:players.slice(0,mode==='solo'?1:mode==='duo'?2:5),phone,logo:publicRegLogoData})});['Team','Captain','P1','P2','P3','P4','P5','Phone'].forEach(k=>{const e=document.getElementById('pubReg'+k);if(e)e.value=''});publicRegLogoData='';const fi=document.getElementById('pubRegLogo');if(fi)fi.value='';const prev=document.getElementById('pubRegLogoPreview');if(prev){prev.src='';prev.style.display='none'}document.getElementById('pubRegStatus').textContent='✓ '+mode.toUpperCase()+' registration submitted. Waiting for organizer approval.';}catch(e){document.getElementById('pubRegStatus').textContent='⚠ '+e.message}};
-  async function loadPendingPublicRegistrations(){if(!publicToken||!publicAdminKey)return;try{const d=await publicApi('/api/admin/'+encodeURIComponent(publicToken)+'/registrations',{headers:{'X-Admin-Key':publicAdminKey}});const box=document.getElementById('publicPendingBox');if(!box)return;box.innerHTML='<b>Pending registrations: '+d.registrations.length+'</b>'+(d.registrations.length?d.registrations.map(r=>`<div class="notice" style="margin-top:8px"><div style="display:flex;gap:10px;align-items:center"><img src="${r.logo||brandFallback()}" style="width:48px;height:48px;object-fit:contain;border-radius:10px;background:#111"><div><b>${esc(r.team)}</b> • ${esc(String(r.mode||'squad').toUpperCase())}<div class="small muted">Captain: ${esc(r.captain||'—')} • Phone: ${esc(r.phone||'—')}</div></div></div><div class="small muted" style="margin-top:6px">${(r.players||[]).map(esc).join(' • ')}</div><button class="primary" style="margin-top:7px" onclick="approvePublicRegistration('${r.id}')">✅ Approve & Add ${esc(String(r.mode||'squad').toUpperCase())}</button></div>`).join(''):'<div class="small muted" style="margin-top:6px">No pending registrations.</div>');}catch(e){}}
-  window.approvePublicRegistration=async function(id){if(!publicToken||!publicAdminKey)return;try{const d=await publicApi('/api/admin/'+encodeURIComponent(publicToken)+'/registrations/'+encodeURIComponent(id),{method:'DELETE',headers:{'X-Admin-Key':publicAdminKey}});const r=d.registration;if(r){const t=newTeam();t.name=r.team;t.captain=r.captain||((r.players||[])[0]||'');t.players=(r.players||[]).slice(0,5);while(t.players.length<5)t.players.push('');t.logo=r.logo||'';t.mode=r.mode||'squad';t.phone=r.phone||'';S.teams.push(t);syncSetupFromInputs();renderAll();await publishPublicShare();}await loadPendingPublicRegistrations();}catch(e){alert('Approval failed: '+e.message)}};
+  let publicRegLogoData='';
+  window.publicRegModeChanged=function(){
+    const mode=(document.getElementById('pubRegMode')?.value||'squad').toLowerCase();
+    const solo=mode==='solo', duo=mode==='duo';
+    const tw=document.getElementById('pubRegTeamWrap'), lw=document.getElementById('pubRegLogoLabel'), cw=document.getElementById('pubRegCaptainWrap');
+    if(tw)tw.style.display=solo?'none':'block';
+    if(cw)cw.style.display=solo?'none':'block';
+    if(lw)lw.textContent=solo?'Player Logo *':'Team Logo *';
+    ['P2','P3','P4','P5'].forEach(k=>{const e=document.getElementById('pubReg'+k+'Wrap');if(e)e.style.display=(solo?'none':duo&&k!=='P2'?'none':k==='P5'?'block':'block')});
+    const p2=document.getElementById('pubRegP2Wrap'),p3=document.getElementById('pubRegP3Wrap'),p4=document.getElementById('pubRegP4Wrap'),p5=document.getElementById('pubRegP5Wrap');
+    if(p2)p2.style.display=solo?'none':'block'; if(p3)p3.style.display=solo||duo?'none':'block'; if(p4)p4.style.display=solo||duo?'none':'block'; if(p5)p5.style.display=solo||duo?'none':'block';
+    const p1=document.getElementById('pubRegP1'); if(p1)p1.placeholder=solo?'Player name':'Player 1 name';
+  };
+  window.publicRegLogoChanged=function(ev){
+    const f=ev?.target?.files?.[0], preview=document.getElementById('pubRegLogoPreview'); publicRegLogoData='';
+    if(!f){if(preview)preview.textContent='No logo selected';return;}
+    if(!f.type.startsWith('image/')){if(preview)preview.textContent='⚠ Please select an image file.';ev.target.value='';return;}
+    const reader=new FileReader(); reader.onload=()=>{const im=new Image();im.onload=()=>{const max=420,scale=Math.min(1,max/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.max(1,Math.round(im.width*scale));c.height=Math.max(1,Math.round(im.height*scale));c.getContext('2d').drawImage(im,0,0,c.width,c.height);publicRegLogoData=c.toDataURL('image/jpeg',.82);if(preview)preview.innerHTML='<img src="'+publicRegLogoData+'" alt="logo preview" style="width:72px;height:72px;object-fit:contain;border-radius:12px;border:1px solid #555;display:block;margin-top:4px">';};im.src=reader.result;};reader.readAsDataURL(f);
+  };
+  window.submitPublicRegistration=async function(){
+    const token=new URLSearchParams(location.search).get('publicToken');if(!token){document.getElementById('pubRegStatus').textContent='Registration link is not active.';return}
+    const mode=(document.getElementById('pubRegMode')?.value||'squad').toLowerCase();
+    const team=document.getElementById('pubRegTeam')?.value.trim()||'', phone=document.getElementById('pubRegPhone')?.value.trim()||'', captain=document.getElementById('pubRegCaptain')?.value.trim()||'';
+    const players=['P1','P2','P3','P4','P5'].map(k=>document.getElementById('pubReg'+k)?.value.trim()||'');
+    const needed=mode==='solo'?1:mode==='duo'?2:4;
+    if(mode!=='solo'&&!team){document.getElementById('pubRegStatus').textContent='⚠ Please enter team name.';return}
+    if(!phone){document.getElementById('pubRegStatus').textContent='⚠ Please enter phone number.';return}
+    if(players.slice(0,needed).some(x=>!x)){document.getElementById('pubRegStatus').textContent='⚠ Please fill all required players for '+mode.toUpperCase()+'.';return}
+    if(!publicRegLogoData){document.getElementById('pubRegStatus').textContent='⚠ Please select a '+(mode==='solo'?'player':'team')+' logo.';return}
+    try{
+      await publicApi('/api/public/'+encodeURIComponent(token)+'/register',{method:'POST',body:JSON.stringify({mode,team,captain:captain||players[0],players:players.slice(0,mode==='solo'?1:mode==='duo'?2:5),phone,logo:publicRegLogoData})});
+      ['Team','Captain','P1','P2','P3','P4','P5','Phone'].forEach(k=>{const e=document.getElementById('pubReg'+k);if(e)e.value=''});const file=document.getElementById('pubRegLogo');if(file)file.value='';publicRegLogoData='';const prev=document.getElementById('pubRegLogoPreview');if(prev)prev.textContent='No logo selected';document.getElementById('pubRegStatus').textContent='✓ Registration submitted. Waiting for organizer approval.';
+    }catch(e){document.getElementById('pubRegStatus').textContent='⚠ '+e.message}
+  };
+  async function loadPendingPublicRegistrations(){if(!publicToken||!publicAdminKey)return;try{const d=await publicApi('/api/admin/'+encodeURIComponent(publicToken)+'/registrations',{headers:{'X-Admin-Key':publicAdminKey}});const box=document.getElementById('publicPendingBox');if(!box)return;box.innerHTML='<b>Pending registrations: '+d.registrations.length+'</b>'+(d.registrations.length?d.registrations.map(r=>`<div class="notice" style="margin-top:8px"><b>${esc(r.team)}</b> • Captain: ${esc(r.captain)}<div class="small muted">${esc((r.mode||'squad').toUpperCase())} • ${esc(r.phone||'No phone')} • ${r.players.map(esc).join(' • ')}</div>${r.logo?'<img src="'+r.logo+'" style="width:48px;height:48px;object-fit:contain;margin-top:6px;border-radius:8px">':''}<button class="primary" style="margin-top:7px" onclick="approvePublicRegistration('${r.id}')">✅ Approve & Add Team</button></div>`).join(''):'<div class="small muted" style="margin-top:6px">No pending registrations.</div>');}catch(e){}}
+  window.approvePublicRegistration=async function(id){if(!publicToken||!publicAdminKey)return;try{const d=await publicApi('/api/admin/'+encodeURIComponent(publicToken)+'/registrations/'+encodeURIComponent(id),{method:'DELETE',headers:{'X-Admin-Key':publicAdminKey}});const r=d.registration;if(r){const t=newTeam();t.name=r.team||r.players?.[0]||'Solo Player';t.captain=r.captain||r.players?.[0]||'';t.players=(r.players||[]).slice(0,5);while(t.players.length<5)t.players.push('');if(r.logo)t.logo=r.logo;S.teams.push(t);syncSetupFromInputs();renderAll();await publishPublicShare();}await loadPendingPublicRegistrations();}catch(e){alert('Approval failed: '+e.message)}};
   async function bootRemotePublic(){const token=new URLSearchParams(location.search).get('publicToken');if(!token)return;try{document.body.classList.add('publicModeBody');const d=await publicApi('/api/public/'+encodeURIComponent(token)+'/state');if(!d.state)throw new Error('Public tournament not found');S=Object.assign(S,d.state,{publicMode:true});ensurePrize();renderAll();document.getElementById('publicApp').style.display='block';renderPublicApp();publicSection('pubHome');}catch(e){const app=document.getElementById('publicApp');if(app){app.style.display='block';app.innerHTML='<div class="publicHero"><h1>Public link unavailable</h1><div>'+esc(e.message)+'</div></div>'}}}
-  window.addEventListener('load',()=>{setPublicUI(publicToken?'Public link ready. Click Publish / Sync after changes.':'Public sharing is not connected.');if(!new URLSearchParams(location.search).get('publicToken'))loadPendingPublicRegistrations();else bootRemotePublic();});
-  window.addEventListener('load',()=>publicRegModeChanged());
+  window.addEventListener('load',()=>{publicRegModeChanged();setPublicUI(publicToken?'Public link ready. Click Publish / Sync after changes.':'Public sharing is not connected.');if(!new URLSearchParams(location.search).get('publicToken'))loadPendingPublicRegistrations();else bootRemotePublic();});
   setInterval(()=>{if(!new URLSearchParams(location.search).get('publicToken')&&publicToken&&publicAdminKey)loadPendingPublicRegistrations()},15000);
 })();
 </script>
@@ -2550,7 +2607,23 @@ load();ensurePrize();S.aktanLogo=S.aktanLogo||'';limitOrganizerNoteWords(documen
 <section id="pubRank" class="publicSection"><div class="publicHero"><h2>🏆 Leaderboard</h2></div><div id="pubRankBox" class="publicTable"></div></section>
 <section id="pubTeamsPage" class="publicSection"><div class="publicHero"><h2>👥 Teams</h2></div><div id="pubTeamsBox" class="publicGrid"></div></section>
 <section id="pubMatchesPage" class="publicSection"><div class="publicHero"><h2>🎮 Matches</h2></div><div id="pubMatchesBox" class="publicTable"></div></section>
-<section id="pubRegister" class="publicSection"><div class="publicHero"><h2>📝 Tournament Registration</h2><div class="muted">Choose Solo, Duo or Squad. Your registration stays pending until the organizer approves it.</div><div class="publicCard" style="margin-top:14px"><label>Mode *</label><select id="pubRegMode" onchange="publicRegModeChanged()"><option value="solo">Solo — 1 Player</option><option value="duo">Duo — 2 Players</option><option value="squad" selected>Squad — 4 Players + 1 Optional Substitute</option></select><div id="pubRegTeamWrap"><label>Team Name *</label><input id="pubRegTeam" maxlength="40" placeholder="Enter team name"></div><div id="pubRegCaptainWrap"><label>Captain *</label><input id="pubRegCaptain" maxlength="40" placeholder="Captain name"></div><div id="pubRegPlayers"></div><label>Phone Number *</label><input id="pubRegPhone" maxlength="20" inputmode="tel" placeholder="Enter phone number"><label>Logo * <span class="small muted">(PNG/JPG, max 2 MB)</span></label><input id="pubRegLogo" type="file" accept="image/png,image/jpeg,image/webp" onchange="publicRegLogoChanged(this)"><img id="pubRegLogoPreview" src="" style="display:none;width:72px;height:72px;object-fit:contain;border-radius:12px;margin:8px 0;background:#111"><button class="primary" type="button" onclick="submitPublicRegistration()">🚀 Submit Registration</button><div id="pubRegStatus" class="small muted" style="margin-top:10px"></div></div></div></section>
+<section id="pubRegister" class="publicSection"><div class="publicHero"><h2>📝 Registration</h2><div class="muted">Choose your mode and fill only the details required for that mode. The organizer will review and approve your registration.</div><div class="publicCard" style="margin-top:14px">
+<label>GAME MODE *</label>
+<select id="pubRegMode" onchange="publicRegModeChanged()" style="width:100%;padding:12px;border-radius:10px;border:1px solid #444;background:#111;color:#fff;font-size:16px">
+<option value="solo">SOLO</option><option value="duo">DUO</option><option value="squad" selected>SQUAD</option>
+</select>
+<div id="pubRegTeamWrap"><label>Team Name *</label><input id="pubRegTeam" maxlength="40" placeholder="Enter team name"></div>
+<div id="pubRegLogoWrap"><label id="pubRegLogoLabel">Team Logo *</label><input id="pubRegLogo" type="file" accept="image/*" onchange="publicRegLogoChanged(event)" style="width:100%"><div id="pubRegLogoPreview" class="small muted" style="margin-top:7px">No logo selected</div></div>
+<div><label>Phone Number *</label><input id="pubRegPhone" type="tel" inputmode="numeric" maxlength="15" placeholder="Enter phone / WhatsApp number"></div>
+<div id="pubRegCaptainWrap"><label>Captain</label><input id="pubRegCaptain" maxlength="40" placeholder="Captain name (optional)"></div>
+<div id="pubRegPlayers" class="grid g2">
+<div><label id="pubRegP1Label">Player 1 *</label><input id="pubRegP1" maxlength="40" placeholder="Player 1 name"></div>
+<div id="pubRegP2Wrap"><label>Player 2 *</label><input id="pubRegP2" maxlength="40" placeholder="Player 2 name"></div>
+<div id="pubRegP3Wrap"><label>Player 3 *</label><input id="pubRegP3" maxlength="40" placeholder="Player 3 name"></div>
+<div id="pubRegP4Wrap"><label>Player 4 *</label><input id="pubRegP4" maxlength="40" placeholder="Player 4 name"></div>
+<div id="pubRegP5Wrap"><label>Substitute (optional)</label><input id="pubRegP5" maxlength="40" placeholder="Optional substitute"></div>
+</div>
+<button class="primary" type="button" onclick="submitPublicRegistration()">🚀 Submit Registration</button><div id="pubRegStatus" class="small muted" style="margin-top:10px"></div></div></div></section>
 <section id="pubMore" class="publicSection"><div class="publicHero"><h2>☰ More</h2></div><div class="publicMoreGrid"><button onclick="publicSection('pubPrize')">🎁<br>Prize Pool</button><button onclick="publicSection('pubPlayers')">📊<br>Player Stats</button><button onclick="publicSection('pubSlots')">🎟️<br>Slots</button><button onclick="publicSection('pubRegister')">📝<br>Register</button><button onclick="publicSection('pubRules')">📜<br>Rules</button></div></section>
 <section id="pubPrize" class="publicSection"><button class="publicBack" onclick="publicSection('pubMore')">← Back</button><div class="publicHero"><h2>🎁 Prize Pool</h2><div id="pubPrizeBox"></div></div></section>
 <section id="pubPlayers" class="publicSection"><button class="publicBack" onclick="publicSection('pubMore')">← Back</button><div class="publicHero"><h2>📊 Player Stats</h2></div><div id="pubPlayersBox" class="publicTable"></div></section>
