@@ -55,10 +55,11 @@ const server=http.createServer(async (req,res)=>{
     m=u.pathname.match(/^\/api\/public\/([^/]+)\/register$/);
     if(m && req.method==='POST'){
       const pub=db.publications[m[1]];if(!pub)return json(res,404,{error:'Public tournament not found'});const b=await readBody(req);
-      const mode=['solo','duo','squad'].includes(String(b.mode||'').toLowerCase())?String(b.mode).toLowerCase():'squad';
+      const cfg=Object.assign({mode:'squad',logo:true,team:true,players:true,phone:true},pub.state.publicRegistration||{});
+      const mode=['solo','duo','squad'].includes(String(cfg.mode||'').toLowerCase())?String(cfg.mode).toLowerCase():'squad';
       const team=clean(b.team,40),captain=clean(b.captain,40),phone=clean(b.phone,20),logo=typeof b.logo==='string'&&b.logo.startsWith('data:image/')?b.logo.slice(0,1500000):'',players=Array.isArray(b.players)?b.players.slice(0,5).map(x=>clean(x,40)):[];
       const need=mode==='solo'?1:mode==='duo'?2:4;
-      if((mode!=='solo'&&!team)||!phone||!logo||players.length<need||players.slice(0,need).some(x=>!x))return json(res,400,{error:'Please provide mode, phone, logo and all required players'});
+      if((cfg.team&&mode!=='solo'&&!team)||(cfg.phone&&!phone)||(cfg.logo&&!logo)||(cfg.players&&(players.length<need||players.slice(0,need).some(x=>!x))))return json(res,400,{error:'Registration does not match the organizer format'});
       const identity=(team||players[0]).toLowerCase();
       const exists=(pub.state.teams||[]).some(t=>String(t.name||'').trim().toLowerCase()===identity) || pub.registrations.some(r=>String(r.team||r.players?.[0]||'').toLowerCase()===identity);
       if(exists)return json(res,409,{error:'This team/player name is already registered or pending'});
