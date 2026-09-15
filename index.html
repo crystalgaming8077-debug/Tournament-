@@ -54,6 +54,17 @@ label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}input,se
 #slotPage .slot-player-name b{color:var(--slot-accent,#ffc83d);font-size:10px;margin-right:4px}
 #slotPage .slot-no-players{font-size:10px;color:rgba(255,255,255,.42);margin:4px 0 8px}
 @media(max-width:430px){#slotPage .slot-player-name{font-size:10px;padding:2px 5px}#slotPage .slot-player-name b{font-size:9px}}
+
+/* PUBLIC REGISTRATION MOBILE CLICK/TOUCH FIX */
+#publicApp #pubRegister { position:relative !important; z-index:9999 !important; pointer-events:auto !important; }
+#publicApp #pubRegister .publicHero, #publicApp #pubRegister .publicCard { position:relative !important; z-index:10000 !important; pointer-events:auto !important; }
+#publicApp #pubRegister input, #publicApp #pubRegister select, #publicApp #pubRegister button, #publicApp #pubRegister label { position:relative !important; z-index:10001 !important; pointer-events:auto !important; touch-action:manipulation !important; -webkit-user-select:text !important; user-select:text !important; }
+#publicApp #pubRegPhone { min-height:46px !important; display:block !important; opacity:1 !important; visibility:visible !important; }
+#publicApp #pubRegLogo { min-height:46px !important; display:block !important; opacity:1 !important; visibility:visible !important; }
+#publicApp #pubRegLogoLabel { display:block !important; }
+#publicApp #pubRegLogoPicker { display:inline-flex !important; align-items:center; justify-content:center; min-height:46px; width:100%; cursor:pointer; }
+#publicApp #pubRegLogo { position:absolute !important; width:1px !important; height:1px !important; opacity:0 !important; pointer-events:none !important; }
+
 </style>
 <style id="sectionThemeEnhancements">
 #teamsPoster .posterV15{background:var(--section-bg,#070a12)!important;border-color:color-mix(in srgb,var(--section-accent,#ffb000) 42%,transparent)!important}
@@ -2554,7 +2565,8 @@ load();ensurePrize();S.aktanLogo=S.aktanLogo||'';limitOrganizerNoteWords(documen
     const p1=document.getElementById('pubRegP1');if(p1)p1.placeholder=solo?'Player name':'Player 1 name';
     const modeEl=document.getElementById('pubRegMode');if(modeEl)modeEl.value=mode;const modeLabel=document.getElementById('pubRegModeLabel');if(modeLabel)modeLabel.textContent=mode.toUpperCase();
   };
-  window.publicRegLogoChanged=function(ev){
+  document.addEventListener('pointerdown',function(e){const p=e.target.closest && e.target.closest('#pubRegLogoPicker');if(p){e.preventDefault();const f=document.getElementById('pubRegLogo');if(f)f.click();}},true);
+window.publicRegLogoChanged=function(ev){
     const f=ev?.target?.files?.[0], preview=document.getElementById('pubRegLogoPreview'); publicRegLogoData='';
     if(!f){if(preview)preview.textContent='No logo selected';return;}
     if(!f.type.startsWith('image/')){if(preview)preview.textContent='⚠ Please select an image file.';ev.target.value='';return;}
@@ -2592,8 +2604,8 @@ load();ensurePrize();S.aktanLogo=S.aktanLogo||'';limitOrganizerNoteWords(documen
 <section id="pubRegister" class="publicSection"><div class="publicHero"><h2>📝 Registration</h2><div class="muted">Choose your mode and fill only the details required for that mode. The organizer will review and approve your registration.</div><div class="publicCard" style="margin-top:14px">
 <div class="notice" style="margin-bottom:10px"><b>FORMAT: <span id="pubRegModeLabel">SQUAD</span></b><div class="small muted">Registration format is set by the organizer.</div></div><select id="pubRegMode" onchange="publicRegModeChanged()" style="display:none"><option value="solo">SOLO</option><option value="duo">DUO</option><option value="squad">SQUAD</option></select>
 <div id="pubRegTeamWrap"><label>Team Name *</label><input id="pubRegTeam" maxlength="40" placeholder="Enter team name"></div>
-<div id="pubRegLogoWrap"><label id="pubRegLogoLabel">Team Logo *</label><input id="pubRegLogo" type="file" accept="image/*" onchange="publicRegLogoChanged(event)" style="width:100%"><div id="pubRegLogoPreview" class="small muted" style="margin-top:7px">No logo selected</div></div>
-<div id="pubRegPhoneWrap"><label>Phone Number *</label><input id="pubRegPhone" type="tel" inputmode="numeric" maxlength="15" placeholder="Enter phone / WhatsApp number"></div>
+<div id="pubRegLogoWrap"><label id="pubRegLogoLabel">Team Logo *</label><label id="pubRegLogoPicker" for="pubRegLogo" class="secondary" style="margin-top:6px">📷 Choose Logo</label><input id="pubRegLogo" type="file" accept="image/*" onchange="publicRegLogoChanged(event)"><div id="pubRegLogoPreview" class="small muted" style="margin-top:7px">No logo selected</div></div>
+<div id="pubRegPhoneWrap"><label>Phone Number *</label><input id="pubRegPhone" type="tel" inputmode="tel" autocomplete="tel" maxlength="15" placeholder="Enter phone / WhatsApp number" onclick="this.focus()" onpointerdown="this.focus()"></div>
 <div id="pubRegCaptainWrap"><label>Captain</label><input id="pubRegCaptain" maxlength="40" placeholder="Captain name (optional)"></div>
 <div id="pubRegPlayers" class="grid g2">
 <div><label id="pubRegP1Label">Player 1 *</label><input id="pubRegP1" maxlength="40" placeholder="Player 1 name"></div>
