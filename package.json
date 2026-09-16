@@ -1,15 +1,9 @@
 {
   "name": "aktan-tournament-public-spectator",
-  "version": "26.0.0",
+  "version": "25.2.0",
   "private": true,
-  "description": "AKTan Tournament PointCalc public spectator and registration server",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "dependencies": {
-    "pg": "^8.16.3"
-  }
+  "description": "AKTan Tournament PointCalc public spectator server with PostgreSQL persistence",
+  "scripts": {"start":"node server.js"},
+  "engines": {"node": ">=18"},
+  "dependencies": {"pg":"^8.16.3"}
 }

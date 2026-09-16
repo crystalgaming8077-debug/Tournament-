@@ -1,29 +1,14 @@
-# AKTan V25.1 — Render Ready
+# AKTan V25 PostgreSQL Persistent Build
 
-## Deploy
-1. Upload these files to a GitHub repository.
-2. In Render: New -> Web Service -> connect the repository.
-3. Runtime: Node.
-4. Build command: `npm install`
-5. Start command: `npm start`
-6. Health check: `/health`
-7. Deploy.
+This build keeps the V25 HTML as the UI and adds PostgreSQL-backed persistence to the public tournament server.
 
-The server listens on `0.0.0.0` and uses Render's `PORT` environment variable.
+## Render setup
+1. Keep the PostgreSQL database available on Render.
+2. In the Web Service Environment, set `DATABASE_URL` to the database's **Internal Database URL**.
+3. Push/replace ALL files from this package in the GitHub repository used by the Render Web Service.
+4. Deploy the latest commit.
+5. Open `/health`. A correct setup returns `persistentStore: true` and version `25.2.0-postgres`.
 
-## Public spectator
-Open the deployed URL in the admin browser, create the Public Link, then share only that tokenized URL with spectators.
+The server automatically creates the `aktan_publications` table. If a local `public-data.json` exists and the PostgreSQL table is empty, it migrates those publications once.
 
-## Important data note
-This version stores shared tournament state in `public-data.json`. Render's free web service filesystem is not a durable database. For a real tournament with important registrations, use a persistent database or persistent disk before relying on it as the sole copy of data. Keep your existing V24/V25.1 local backup.
-
-
-## V26 Persistent Public Link
-This build supports persistent public-link data through Render PostgreSQL. If `DATABASE_URL` is configured, public tokens, tournament state, and registrations are stored in the `aktan_publications` table and survive service restarts/redeploys. Without `DATABASE_URL`, it falls back to `public-data.json`.
-
-### Render setup
-1. Create a PostgreSQL database in Render.
-2. In the web service Environment settings, add `DATABASE_URL` using the database's internal connection URL.
-3. Redeploy the web service.
-4. Open `/health`; the response should show `persistentStore: true` and `version: "26.0.0"`.
-5. Create/Sync the public link once. Keep that tokenized URL; future restarts use the same database record.
+Never commit `DATABASE_URL` or database passwords to GitHub.
