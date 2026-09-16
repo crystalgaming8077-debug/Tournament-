@@ -14,7 +14,32 @@ function loadDB(){
   catch { return {publications:{}}; }
 }
 let db = loadDB();
-function saveDB(){ fs.writeFileSync(DATA_FILE, JSON.stringify(db,null,2)); }
+let pool = null;
+let persistentStore = false;
+
+async function initPersistentStore(){
+  if(!process.env.DATABASE_URL) return;
+  const { Pool } = require('pg');
+  pool = new Pool({connectionString:process.env.DATABASE_URL, ssl:{rejectUnauthorized:false}, max:5});
+  await pool.query(`CREATE TABLE IF NOT EXISTS aktan_publications (token TEXT PRIMARY KEY, admin_key TEXT NOT NULL, state JSONB NOT NULL, registrations JSONB NOT NULL DEFAULT '[]'::jsonb, updated_at BIGINT NOT NULL)`);
+  const rows=await pool.query('SELECT token, admin_key, state, registrations, updated_at FROM aktan_publications');
+  if(rows.rows.length===0 && Object.keys(db.publications).length){
+    for(const pub of Object.values(db.publications)){
+      await pool.query('INSERT INTO aktan_publications(token,admin_key,state,registrations,updated_at) VALUES($1,$2,$3::jsonb,$4::jsonb,$5) ON CONFLICT(token) DO NOTHING',[pub.token,pub.adminKey,JSON.stringify(pub.state),JSON.stringify(pub.registrations||[]),pub.updatedAt||Date.now()]);
+    }
+  }
+  const fresh=await pool.query('SELECT token, admin_key, state, registrations, updated_at FROM aktan_publications');
+  db={publications:{}};
+  for(const r of fresh.rows) db.publications[r.token]={token:r.token,adminKey:r.admin_key,state:r.state,registrations:r.registrations||[],updatedAt:Number(r.updated_at)};
+  persistentStore=true;
+}
+async function savePublication(pub){
+  if(persistentStore){
+    await pool.query('INSERT INTO aktan_publications(token,admin_key,state,registrations,updated_at) VALUES($1,$2,$3::jsonb,$4::jsonb,$5) ON CONFLICT(token) DO UPDATE SET admin_key=EXCLUDED.admin_key,state=EXCLUDED.state,registrations=EXCLUDED.registrations,updated_at=EXCLUDED.updated_at',[pub.token,pub.adminKey,JSON.stringify(pub.state),JSON.stringify(pub.registrations||[]),pub.updatedAt||Date.now()]);
+  } else {
+    fs.writeFileSync(DATA_FILE, JSON.stringify(db,null,2));
+  }
+}
 function json(res,status,data){
   const body=JSON.stringify(data);
   res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type, X-Admin-Key','Access-Control-Allow-Methods':'GET,POST,PUT,DELETE,OPTIONS','Cache-Control':'no-store'});
@@ -44,13 +69,13 @@ const server=http.createServer(async (req,res)=>{
     if(req.method==='POST' && u.pathname==='/api/public/create'){
       const b=await readBody(req);const state=safeState(b.state);if(!state)return json(res,400,{error:'Invalid tournament state'});
       const token=makeToken(),adminKey=makeKey();
-      db.publications[token]={token,adminKey,state,registrations:[],updatedAt:Date.now()};saveDB();
+      db.publications[token]={token,adminKey,state,registrations:[],updatedAt:Date.now()};await savePublication(db.publications[token]);
       return json(res,200,{token,adminKey,url:origin(req)+'/?publicToken='+encodeURIComponent(token)});
     }
     let m=u.pathname.match(/^\/api\/public\/([^/]+)\/state$/);
     if(m){const pub=db.publications[m[1]];if(!pub)return json(res,404,{error:'Public tournament not found'});
       if(req.method==='GET')return json(res,200,{state:pub.state,updatedAt:pub.updatedAt});
-      if(req.method==='PUT'){if(!auth(pub,req))return json(res,403,{error:'Invalid admin key'});const b=await readBody(req),state=safeState(b.state);if(!state)return json(res,400,{error:'Invalid state'});pub.state=state;pub.updatedAt=Date.now();saveDB();return json(res,200,{ok:true,updatedAt:pub.updatedAt});}
+      if(req.method==='PUT'){if(!auth(pub,req))return json(res,403,{error:'Invalid admin key'});const b=await readBody(req),state=safeState(b.state);if(!state)return json(res,400,{error:'Invalid state'});pub.state=state;pub.updatedAt=Date.now();await savePublication(pub);return json(res,200,{ok:true,updatedAt:pub.updatedAt});}
     }
     m=u.pathname.match(/^\/api\/public\/([^/]+)\/register$/);
     if(m && req.method==='POST'){
@@ -63,19 +88,19 @@ const server=http.createServer(async (req,res)=>{
       const identity=(team||players[0]).toLowerCase();
       const exists=(pub.state.teams||[]).some(t=>String(t.name||'').trim().toLowerCase()===identity) || pub.registrations.some(r=>String(r.team||r.players?.[0]||'').toLowerCase()===identity);
       if(exists)return json(res,409,{error:'This team/player name is already registered or pending'});
-      const r={id:makeToken(),mode,team,captain:captain||players[0],players,phone,logo,createdAt:Date.now()};pub.registrations.push(r);saveDB();return json(res,201,{ok:true,id:r.id});
+      const r={id:makeToken(),mode,team,captain:captain||players[0],players,phone,logo,createdAt:Date.now()};pub.registrations.push(r);await savePublication(pub);return json(res,201,{ok:true,id:r.id});
     }
     m=u.pathname.match(/^\/api\/admin\/([^/]+)\/registrations$/);
     if(m && req.method==='GET'){const pub=db.publications[m[1]];if(!pub)return json(res,404,{error:'Public tournament not found'});if(!auth(pub,req))return json(res,403,{error:'Invalid admin key'});return json(res,200,{registrations:pub.registrations});}
     m=u.pathname.match(/^\/api\/admin\/([^/]+)\/registrations\/([^/]+)$/);
-    if(m && req.method==='DELETE'){const pub=db.publications[m[1]];if(!pub)return json(res,404,{error:'Public tournament not found'});if(!auth(pub,req))return json(res,403,{error:'Invalid admin key'});const i=pub.registrations.findIndex(r=>r.id===m[2]);if(i<0)return json(res,404,{error:'Registration not found'});const r=pub.registrations.splice(i,1)[0];saveDB();return json(res,200,{registration:r});}
+    if(m && req.method==='DELETE'){const pub=db.publications[m[1]];if(!pub)return json(res,404,{error:'Public tournament not found'});if(!auth(pub,req))return json(res,403,{error:'Invalid admin key'});const i=pub.registrations.findIndex(r=>r.id===m[2]);if(i<0)return json(res,404,{error:'Registration not found'});const r=pub.registrations.splice(i,1)[0];await savePublication(pub);return json(res,200,{registration:r});}
 
     // Serve the app for root and public links.
     if(req.method==='GET' && (u.pathname==='/' || u.pathname==='/index.html')){
       const html=fs.readFileSync(HTML);res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});return res.end(html);
     }
-    if(req.method==='GET' && u.pathname==='/health')return json(res,200,{ok:true,publications:Object.keys(db.publications).length});
+    if(req.method==='GET' && u.pathname==='/health')return json(res,200,{ok:true,publications:Object.keys(db.publications).length,persistentStore,version:'26.0.0'});
     res.writeHead(404,{'Content-Type':'text/plain'});res.end('Not found');
   }catch(e){console.error(e);json(res,500,{error:'Server error: '+e.message})}
 });
-server.listen(PORT,HOST,()=>console.log(`AKTan Public Server running on http://localhost:${PORT}`));
+(async()=>{try{await initPersistentStore();server.listen(PORT,HOST,()=>console.log(`AKTan Public Server running on http://localhost:${PORT} | persistent=${persistentStore}`));}catch(e){console.error('Persistent database initialization failed:',e);process.exit(1)}})();
