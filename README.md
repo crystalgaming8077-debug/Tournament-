@@ -25,4 +25,5 @@ Unlimited public rooms/contests with independent category, format, map, slot cap
 - Admin PIN fields support up to 30 characters.
 
 
-V26.5.1: final room selector fix and admin browser registration notifications.
+## V26.5 CLEAN FIX
+Built directly from V26.4. No OCR code was changed. Removed the broken V26.4 follow-up override and added a clean room selector/format registration handler plus admin registration notifications.

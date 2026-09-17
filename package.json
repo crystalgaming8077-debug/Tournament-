@@ -1,6 +1,6 @@
 {
   "name": "aktan-tournament-public-spectator",
-  "version": "26.5.1",
+  "version": "26.5.0-clean",
   "private": true,
   "description": "AKTan Tournament PointCalc public spectator server with PostgreSQL persistence",
   "scripts": {
