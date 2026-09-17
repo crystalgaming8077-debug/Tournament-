@@ -1381,6 +1381,150 @@ function printPrizePool(){
   if(typeof oldSave==='function') window.save=function(){oldSave(); if(typeof publishPublicShare==='function'&&localStorage.getItem('AKTan_Public_Token_v1')) setTimeout(()=>publishPublicShare(),300);};
 })();
 <\/script>
+
+<script id="AKTanV265RoomSelectNotifications">
+/* V26.5: Robust room selection + admin registration notifications.
+   Keeps V24 OCR and existing contest/leaderboard features intact. */
+(function(){
+  const ROOM_KEY='AKTan_Selected_Public_Room_v265';
+  const NOTIFY_SEEN='AKTan_Public_Reg_Seen_v265';
+  let selectedRoomId=localStorage.getItem(ROOM_KEY)||'';
+  let lastRegIds=[];
+  let notifyTimer=null;
+
+  function esc5(v){return typeof esc==='function'?esc(String(v??'')):String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+  function rooms(){return Array.isArray(S?.publicContests)?S.publicContests:[]}
+  function getRoom5(id){return rooms().find(r=>String(r.id)===String(id))||null}
+  function fmt5(f){
+    const raw=String(f||'').toLowerCase().replace(/\s+/g,'');
+    const nums=[1,2,3,4].filter(n=>new RegExp('(?:^|/)'+n+'v'+n+'(?:$|/)').test(raw));
+    const n=nums[0]||(/\bsolo\b/.test(raw)?1:/\bduo\b/.test(raw)?2:/\bsquad\b/.test(raw)?4:1));
+    return {n,mode:n===1?'solo':n===2?'duo':'squad'};
+  }
+  function setStatus(text){const e=document.getElementById('pubRegStatus');if(e)e.textContent=text}
+  function selectedRoom(){return getRoom5(selectedRoomId)||getRoom5(document.getElementById('pubRegContest')?.value||'')}
+
+  function showRoom(r){
+    if(!r)return;
+    selectedRoomId=String(r.id);localStorage.setItem(ROOM_KEY,selectedRoomId);
+    const sel=document.getElementById('pubRegContest');if(sel&&sel.value!==selectedRoomId)sel.value=selectedRoomId;
+    const n=(S.teams||[]).filter(t=>String(t.contestId||'')===selectedRoomId).length;
+    const m=Math.max(1,+r.maxSlots||1),left=Math.max(0,m-n),f=fmt5(r.format);
+    const info=document.getElementById('pubRegContestInfo');
+    if(info)info.textContent=`${r.category||'Contest'} • ${r.format||'Custom'} • ${r.map||'Custom'} • Entry ₹${+r.entryFee||0} • ${n}/${m} slots • ${left} left • FORMAT: ${f.n} PLAYER${f.n===1?'':'S'}`;
+    const mode=document.getElementById('pubRegMode');if(mode)mode.value=f.mode;
+    const label=document.getElementById('pubRegModeLabel');if(label)label.textContent=String(r.format||f.mode).toUpperCase();
+    // Explicitly control player rows so the selected room format is always visible.
+    ['pubRegP2Wrap','pubRegP3Wrap','pubRegP4Wrap'].forEach(id=>{const e=document.getElementById(id);if(e)e.style.display='none'});
+    if(f.n>=2){const e=document.getElementById('pubRegP2Wrap');if(e)e.style.display='block'}
+    if(f.n>=3){const e=document.getElementById('pubRegP3Wrap');if(e)e.style.display='block'}
+    if(f.n>=4){const e=document.getElementById('pubRegP4Wrap');if(e)e.style.display='block'}
+    const team=document.getElementById('pubRegTeamWrap');if(team)team.style.display='block';
+    const te=document.getElementById('pubRegTeam');if(te){te.required=true;te.placeholder='Enter team name'}
+    const phone=document.getElementById('pubRegPhone');if(phone)phone.required=true;
+  }
+
+  function populateFixed(){
+    const sel=document.getElementById('pubRegContest');if(!sel)return;
+    const list=rooms();
+    const old=selectedRoomId||sel.value||'';
+    sel.innerHTML='<option value="">Select a room</option>'+list.map(r=>{
+      const n=(S.teams||[]).filter(t=>String(t.contestId||'')===String(r.id)).length,m=Math.max(1,+r.maxSlots||1),full=n>=m;
+      return `<option value="${esc5(r.id)}" ${full?'disabled':''}>${esc5(r.title)} — ${n}/${m}${full?' FULL':''}</option>`;
+    }).join('');
+    const keep=getRoom5(old);
+    if(keep && (S.teams||[]).filter(t=>String(t.contestId||'')===String(keep.id)).length<Math.max(1,+keep.maxSlots||1)){
+      sel.value=String(keep.id);selectedRoomId=String(keep.id);showRoom(keep);
+    }else if(list.length){
+      const first=list.find(r=>(S.teams||[]).filter(t=>String(t.contestId||'')===String(r.id)).length<Math.max(1,+r.maxSlots||1));
+      if(first){sel.value=String(first.id);selectedRoomId=String(first.id);showRoom(first)}
+    }
+  }
+
+  window.publicRoomSelected=function(){
+    const id=document.getElementById('pubRegContest')?.value||'';
+    if(id){selectedRoomId=String(id);localStorage.setItem(ROOM_KEY,selectedRoomId);const r=getRoom5(id);if(r)showRoom(r);return;}
+    const r=getRoom5(selectedRoomId);if(r)showRoom(r);else setStatus('⚠ Please select a contest / room.');
+  };
+
+  window.registerForPublicRoom=function(id){
+    selectedRoomId=String(id);localStorage.setItem(ROOM_KEY,selectedRoomId);
+    const sel=document.getElementById('pubRegContest');if(sel){sel.value=selectedRoomId;}
+    const r=getRoom5(selectedRoomId);if(r)showRoom(r);
+    if(typeof publicSection==='function')publicSection('pubRegister');
+    setTimeout(()=>{const s=document.getElementById('pubRegContest');if(s)s.value=selectedRoomId;const rr=getRoom5(selectedRoomId);if(rr)showRoom(rr)},0);
+  };
+
+  window.submitPublicRegistration=async function(){
+    const token=new URLSearchParams(location.search).get('publicToken');
+    const sel=document.getElementById('pubRegContest');
+    const id=sel?.value||selectedRoomId||'';
+    const r=getRoom5(id),st=document.getElementById('pubRegStatus');
+    if(!token){st.textContent='Registration link is not active.';return}
+    if(!r){st.textContent='⚠ Please select a contest / room.';return}
+    selectedRoomId=String(r.id);localStorage.setItem(ROOM_KEY,selectedRoomId);showRoom(r);
+    const approved=(S.teams||[]).filter(t=>String(t.contestId||'')===String(r.id)).length;
+    const max=Math.max(1,+r.maxSlots||1);
+    if(approved>=max){st.textContent='⚠ This room is full. Please choose another room.';return}
+    const f=fmt5(r.format),team=document.getElementById('pubRegTeam')?.value.trim()||'',phone=document.getElementById('pubRegPhone')?.value.trim()||'',players=['P1','P2','P3','P4'].map(k=>document.getElementById('pubReg'+k)?.value.trim()||''),logo=window.__aktanRoomLogoData||window.publicRegLogoData||'';
+    if(!team){st.textContent='⚠ Please enter team name.';document.getElementById('pubRegTeam')?.focus();return}
+    if(!phone){st.textContent='⚠ Please enter phone number.';return}
+    if(players.slice(0,f.n).some(x=>!x)){st.textContent='⚠ Please fill all '+f.n+' required player names for '+(r.format||'this room')+'.';return}
+    try{
+      const rr=await fetch((location.origin||'')+'/api/public/'+encodeURIComponent(token)+'/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contestId:String(r.id),mode:f.mode,team,captain:players[0],players:players.slice(0,f.n),phone,logo})});
+      const d=await rr.json();if(!rr.ok)throw new Error(d.error||('HTTP '+rr.status));
+      ['Team','Captain','P1','P2','P3','P4','P5','Phone'].forEach(k=>{const e=document.getElementById('pubReg'+k);if(e)e.value=''});const file=document.getElementById('pubRegLogo');if(file)file.value='';window.__aktanRoomLogoData='';window.publicRegLogoData='';
+      st.textContent='✓ Registration submitted for '+r.title+'. Waiting for organizer approval.';
+    }catch(e){st.textContent='⚠ '+e.message}
+  };
+
+  // Admin-side browser notification. It works while the admin page is open; permission is requested once.
+  async function enableNotifications(){
+    if(!('Notification' in window)){alert('Browser notifications are not supported on this device/browser.');return false}
+    if(Notification.permission==='granted')return true;
+    if(Notification.permission==='denied'){alert('Notifications are blocked for this site. Enable them in browser site settings.');return false}
+    const p=await Notification.requestPermission();return p==='granted';
+  }
+  window.enablePublicRegistrationNotifications=enableNotifications;
+  function addNotifyUI(){
+    const box=document.getElementById('publicPendingBox');if(!box||document.getElementById('enableRegNotifications'))return;
+    const b=document.createElement('button');b.id='enableRegNotifications';b.type='button';b.style.margin='8px 0';b.textContent='🔔 Enable Registration Notifications';b.onclick=async()=>{const ok=await enableNotifications();b.textContent=ok?'🔔 Notifications Enabled':'🔔 Enable Registration Notifications'};
+    box.parentNode?.insertBefore(b,box);
+  }
+  async function pollRegistrations(){
+    const hasPublic=new URLSearchParams(location.search).get('publicToken');if(hasPublic)return;
+    const token=localStorage.getItem('AKTan_Public_Token_v1')||'',key=localStorage.getItem('AKTan_Public_AdminKey_v1')||'';if(!token||!key)return;
+    try{
+      const rr=await fetch((location.origin||'')+'/api/admin/'+encodeURIComponent(token)+'/registrations',{headers:{'X-Admin-Key':key,'Cache-Control':'no-cache'}});if(!rr.ok)return;
+      const d=await rr.json(),regs=Array.isArray(d.registrations)?d.registrations:[],ids=regs.map(r=>String(r.id));
+      const seen=JSON.parse(localStorage.getItem(NOTIFY_SEEN)||'[]');
+      const fresh=regs.filter(r=>!seen.includes(String(r.id)));
+      if(lastRegIds.length===0){
+        lastRegIds=ids;
+        // Mark existing registrations as seen so enabling notifications does not spam old entries.
+        localStorage.setItem(NOTIFY_SEEN,JSON.stringify(ids.slice(-100)));
+      }else if(fresh.length){
+        const title='AKTan: New Registration';
+        fresh.slice(-3).forEach(r=>{
+          const body=(r.team||'Team')+' • '+(r.contestTitle||'Room')+' • '+(r.players||[]).join(', ');
+          if('Notification' in window && Notification.permission==='granted')new Notification(title,{body,tag:String(r.id)});
+        });
+        const merged=[...seen,...fresh.map(r=>String(r.id))].slice(-100);localStorage.setItem(NOTIFY_SEEN,JSON.stringify(merged));
+        if(typeof loadPendingPublicRegistrations==='function')loadPendingPublicRegistrations();
+      }
+      lastRegIds=ids;
+    }catch(_){ }
+  }
+  function boot265(){
+    addNotifyUI();
+    if(!new URLSearchParams(location.search).get('publicToken')){populateFixed();pollRegistrations();if(!notifyTimer)notifyTimer=setInterval(pollRegistrations,10000)}
+    else {setTimeout(()=>{populateFixed();const r=getRoom5(selectedRoomId);if(r)showRoom(r)},200)}
+  }
+  window.addEventListener('load',boot265);
+  setTimeout(boot265,500);
+})();
+</script>
+
 </body></html>`);
   w.document.close();
 }
