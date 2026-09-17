@@ -23,3 +23,6 @@ Unlimited public rooms/contests with independent category, format, map, slot cap
 - Attractive room thumbnail upload + preview + public display.
 - Large visible “PAYMENT AFTER ALL SLOTS ARE FULL” banner on public room cards.
 - Admin PIN fields support up to 30 characters.
+
+
+V26.5.1: final room selector fix and admin browser registration notifications.
