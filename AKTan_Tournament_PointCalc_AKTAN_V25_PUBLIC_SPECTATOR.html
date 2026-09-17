@@ -3237,7 +3237,7 @@ window.previewOCRImages=function(e){
   function ensureRooms(){S.publicContests=Array.isArray(S.publicContests)?S.publicContests:[];return S.publicContests}
   function escR(v){return typeof esc==='function'?esc(String(v??'')):String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
   function room(id){return ensureRooms().find(r=>r.id===id)}
-  function formatInfo(f){const raw=String(f||'').toLowerCase().replace(/\s+/g,'');const m=raw.match(/([1-4])v\1/);if(m){const n=+m[1];return {mode:n===1?'solo':n===2?'duo':'squad',need:n,team:true}}if(raw==='solo')return {mode:'solo',need:1,team:true};if(raw==='duo')return {mode:'duo',need:2,team:true};if(raw==='squad')return {mode:'squad',need:4,team:true};return {mode:'squad',need:1,team:true}}
+  function formatInfo(f){const raw=String(f||'').toLowerCase().replace(/\s+/g,'');const m=raw.match(/([1-4])v\1/);if(m){const n=+m[1];return {mode:n===1?'solo':n===2?'duo':'squad',need:n,team:false}}if(raw==='solo')return {mode:'solo',need:1,team:false};if(raw==='duo')return {mode:'duo',need:2,team:false};if(raw==='squad')return {mode:'squad',need:4,team:false};return {mode:'squad',need:1,team:false}}
   function countApproved(r){return (S.teams||[]).filter(t=>String(t.contestId||'')===String(r.id)).length}
   function status(r){const n=countApproved(r),max=Math.max(1,+r.maxSlots||1);if(r.status==='Completed'||r.status==='Cancelled')return r.status;if(n>=max)return 'FULL';if(r.status==='Live')return 'LIVE';return 'UPCOMING'}
   function dateText(v){if(!v)return 'Time not set';try{return new Date(v).toLocaleString()}catch(e){return String(v)}}
@@ -3273,118 +3273,90 @@ window.previewOCRImages=function(e){
 })();
 </script>
 
-<script>
-/* AKTan V26.5 CLEAN FIX — built from V26.4 only. No OCR code changed. */
+<script id="AKTanV263TeamNameLinkedFix">
+/* V26.4: Public room registered teams, phone linkage, and room-specific public leaderboard.
+   Team Name is required for every public room, including 1v1/Solo.
+   Approved registrations are added to the main S.teams list with the submitted team name.
+   Room-specific player count remains controlled by the selected room format. */
 (function(){
-  function getToken(){return localStorage.getItem('AKTan_Public_Token_v1')||'';}
-  function getKey(){return localStorage.getItem('AKTan_Public_AdminKey_v1')||'';}
-  function isPublicViewer(){return !!new URLSearchParams(location.search).get('publicToken');}
-  function escN(v){return String(v??'').replace(/[&<>"']/g,function(m){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]);});}
-  function rooms(){return Array.isArray(window.S&&S.publicContests)?S.publicContests:[];}
-  function room(id){return rooms().find(function(r){return String(r.id)===String(id);});}
-  function formatRoom(f){
-    var raw=String(f||'').toLowerCase().replace(/\s+/g,'');
-    var m=raw.match(/([1-4])v\1/);
-    var n=m?Number(m[1]):(raw==='solo'?1:raw==='duo'?2:raw==='squad'?4:1);
-    return {need:n,mode:n===1?'solo':n===2?'duo':'squad'};
+  const origFormatInfo = window.__aktanV263OrigFormatInfo || (typeof formatInfo==='function' ? formatInfo : null);
+  if(!window.__aktanV263OrigFormatInfo && origFormatInfo) window.__aktanV263OrigFormatInfo=origFormatInfo;
+  function roomFormatInfo(f){
+    const raw=String(f||'').toLowerCase().replace(/\s+/g,'');
+    const m=raw.match(/([1-4])v\1/);
+    if(m){const n=+m[1];return {mode:n===1?'solo':n===2?'duo':'squad',need:n,team:true};}
+    if(raw==='solo') return {mode:'solo',need:1,team:true};
+    if(raw==='duo') return {mode:'duo',need:2,team:true};
+    if(raw==='squad') return {mode:'squad',need:4,team:true};
+    return {mode:'squad',need:1,team:true};
   }
-  function approvedCount(r){return (window.S&&Array.isArray(S.teams)?S.teams:[]).filter(function(t){return String(t.contestId||'')===String(r.id);}).length;}
-  function ensureInfo(r){
-    var info=document.getElementById('pubRegContestInfo');
-    if(!info||!r)return;
-    var fi=formatRoom(r), n=approvedCount(r), max=Math.max(1,Number(r.maxSlots)||1), left=Math.max(0,max-n);
-    info.textContent=(r.category||'Contest')+' • '+(r.format||'Custom')+' • '+(r.map||'Custom')+' • Entry ₹'+(Number(r.entryFee)||0)+' • '+n+'/'+max+' slots • '+left+' left • FORMAT: '+fi.need+' PLAYER'+(fi.need===1?'':'S');
-    var mode=document.getElementById('pubRegMode'); if(mode)mode.value=fi.mode;
-    var teamWrap=document.getElementById('pubRegTeamWrap'); if(teamWrap)teamWrap.style.display='block';
-    var team=document.getElementById('pubRegTeam'); if(team){team.required=true;team.placeholder='Enter team name';}
-    ['P2','P3','P4','P5'].forEach(function(k){var e=document.getElementById('pubReg'+k+'Wrap');if(e)e.style.display='none';});
-    if(fi.need>=2){var p2=document.getElementById('pubRegP2Wrap');if(p2)p2.style.display='block';}
-    if(fi.need>=3){var p3=document.getElementById('pubRegP3Wrap');if(p3)p3.style.display='block';}
-    if(fi.need>=4){var p4=document.getElementById('pubRegP4Wrap');if(p4)p4.style.display='block';}
-    var p5=document.getElementById('pubRegP5Wrap');if(p5)p5.style.display='block';
-  }
-  var oldSelect=window.publicRoomSelected;
+  window.formatInfo=roomFormatInfo;
+  function getRoom(id){return (S.publicContests||[]).find(r=>String(r.id)===String(id))||null;}
+  function setVisible(id,on){const e=document.getElementById(id);if(e)e.style.display=on?'block':'none';}
   window.publicRoomSelected=function(){
-    var id=(document.getElementById('pubRegContest')||{}).value||'';
-    var r=room(id);
-    if(r){ensureInfo(r);return;}
-    if(typeof oldSelect==='function')oldSelect();
+    const id=document.getElementById('pubRegContest')?.value||'', r=getRoom(id), info=document.getElementById('pubRegContestInfo');
+    if(!r){if(info)info.textContent='Select a contest / room.';return;}
+    const n=(S.teams||[]).filter(t=>String(t.contestId||'')===String(r.id)).length, m=Math.max(1,+r.maxSlots||1), fi=roomFormatInfo(r.format);
+    if(info)info.textContent=`${r.category||'Contest'} • ${r.format||'Custom'} • ${r.map||'Custom'} • Entry ₹${+r.entryFee||0} • ${n}/${m} slots • ${Math.max(0,m-n)} left`;
+    const rm=document.getElementById('pubRegMode'); if(rm)rm.value=fi.mode;
+    setVisible('pubRegTeamWrap',true);
+    const team=document.getElementById('pubRegTeam'); if(team){team.required=true;team.placeholder='Enter team name';}
+    const pwrap={P2:'pubRegP2Wrap',P3:'pubRegP3Wrap',P4:'pubRegP4Wrap',P5:'pubRegP5Wrap'};
+    Object.values(pwrap).forEach(id=>setVisible(id,false));
+    if(fi.need>=2)setVisible(pwrap.P2,true);
+    if(fi.need>=3)setVisible(pwrap.P3,true);
+    if(fi.need>=4)setVisible(pwrap.P4,true);
+    setVisible(pwrap.P5,true);
+    const p1=document.getElementById('pubRegP1'); if(p1)p1.placeholder=fi.need===1?'Player 1 name':'Player 1 name';
+    const label=document.querySelector('#pubRegTeamWrap label'); if(label)label.textContent='Team Name *';
   };
-  function fillSelect(){
-    var sel=document.getElementById('pubRegContest'); if(!sel)return;
-    var cur=sel.value, list=rooms();
-    sel.innerHTML='<option value="">Select a room</option>';
-    list.forEach(function(r){
-      var n=approvedCount(r), max=Math.max(1,Number(r.maxSlots)||1), opt=document.createElement('option');
-      opt.value=String(r.id); opt.textContent=String(r.title||'Untitled Room')+' — '+n+'/'+max+(n>=max?' FULL':''); opt.disabled=n>=max; sel.appendChild(opt);
-    });
-    var keep=room(cur); if(keep&&approvedCount(keep)<Math.max(1,Number(keep.maxSlots)||1))sel.value=cur;
-    else {var first=list.find(function(r){return approvedCount(r)<Math.max(1,Number(r.maxSlots)||1);}); if(first)sel.value=String(first.id);}
-    window.publicRoomSelected();
-  }
-  window.registerForPublicRoom=function(id){
-    var sel=document.getElementById('pubRegContest');if(sel)sel.value=String(id);fillSelect();
-    if(sel)sel.value=String(id);window.publicRoomSelected();
-    if(typeof window.publicSection==='function')window.publicSection('pubRegister');
+  window.publicRegModeChanged=function(){
+    // Keep the organizer's global registration controls, but never hide Team Name.
+    const c=(typeof getPublicRegConfig==='function')?getPublicRegConfig():{logo:true,phone:true,players:true};
+    setVisible('pubRegTeamWrap',true);
+    const team=document.getElementById('pubRegTeam');if(team){team.required=true;team.placeholder='Enter team name';}
+    const lw=document.getElementById('pubRegLogoLabel');if(lw)lw.textContent='Team Logo *';
+    setVisible('pubRegLogoWrap',!!c.logo);setVisible('pubRegPhoneWrap',!!c.phone);setVisible('pubRegPlayers',!!c.players);setVisible('pubRegCaptainWrap',false);
+    setVisible('pubRegP2Wrap',false);setVisible('pubRegP3Wrap',false);setVisible('pubRegP4Wrap',false);setVisible('pubRegP5Wrap',true);
+    const mode=(document.getElementById('pubRegMode')?.value||c.mode||'squad').toLowerCase();
+    const need=mode==='solo'?1:mode==='duo'?2:4;
+    if(need>=2)setVisible('pubRegP2Wrap',true);if(need>=3)setVisible('pubRegP3Wrap',true);if(need>=4)setVisible('pubRegP4Wrap',true);
+    const ml=document.getElementById('pubRegModeLabel');if(ml)ml.textContent=mode.toUpperCase();
   };
   window.submitPublicRegistration=async function(){
-    var token=new URLSearchParams(location.search).get('publicToken');
-    var id=(document.getElementById('pubRegContest')||{}).value||'';
-    var r=room(id), st=document.getElementById('pubRegStatus');
-    if(!st)return;
+    const token=new URLSearchParams(location.search).get('publicToken'), id=document.getElementById('pubRegContest')?.value||'', r=getRoom(id), st=document.getElementById('pubRegStatus');
     if(!token){st.textContent='Registration link is not active.';return;}
     if(!r){st.textContent='⚠ Please select a contest / room.';return;}
-    var n=approvedCount(r), max=Math.max(1,Number(r.maxSlots)||1); if(n>=max){st.textContent='⚠ This room is full. Please choose another room.';return;}
-    var fi=formatRoom(r.format), team=((document.getElementById('pubRegTeam')||{}).value||'').trim(), phone=((document.getElementById('pubRegPhone')||{}).value||'').trim();
-    var players=['P1','P2','P3','P4','P5'].map(function(k){return ((document.getElementById('pubReg'+k)||{}).value||'').trim();});
-    if(!team){st.textContent='⚠ Please enter Team Name.';document.getElementById('pubRegTeam')?.focus();return;}
-    if(!phone){st.textContent='⚠ Please enter phone number.';document.getElementById('pubRegPhone')?.focus();return;}
-    if(players.slice(0,fi.need).some(function(x){return !x;})){st.textContent='⚠ Please fill all '+fi.need+' required player names.';return;}
-    var logo=window.__aktanRoomLogoData||window.publicRegLogoData||'';
+    const n=(S.teams||[]).filter(t=>String(t.contestId||'')===String(r.id)).length,m=Math.max(1,+r.maxSlots||1);
+    if(n>=m){st.textContent='⚠ This room is full. Please choose another room.';return;}
+    const fi=roomFormatInfo(r.format), team=document.getElementById('pubRegTeam')?.value.trim()||'', phone=document.getElementById('pubRegPhone')?.value.trim()||'', players=['P1','P2','P3','P4','P5'].map(k=>document.getElementById('pubReg'+k)?.value.trim()||''), logo=window.__aktanRoomLogoData||window.publicRegLogoData||'';
+    if(!team){st.textContent='⚠ Please enter team name.';document.getElementById('pubRegTeam')?.focus();return;}
+    if(!phone){st.textContent='⚠ Please enter phone number.';return;}
+    if(players.slice(0,fi.need).some(x=>!x)){st.textContent='⚠ Please fill all required players for '+(r.format||'this room')+'.';return;}
     try{
-      var res=await fetch((location.origin||'')+'/api/public/'+encodeURIComponent(token)+'/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contestId:String(r.id),mode:fi.mode,team:team,captain:players[0],players:players.slice(0,fi.need),phone:phone,logo:logo})});
-      var data=await res.json(); if(!res.ok)throw new Error(data.error||('HTTP '+res.status));
-      ['Team','Captain','P1','P2','P3','P4','P5','Phone'].forEach(function(k){var e=document.getElementById('pubReg'+k);if(e)e.value='';});
-      var file=document.getElementById('pubRegLogo');if(file)file.value=''; window.__aktanRoomLogoData='';window.publicRegLogoData='';
-      st.textContent='✓ Registration submitted for '+String(r.title||'this room')+'. Waiting for organizer approval.';
-      fillSelect();
+      const d=await publicApi('/api/public/'+encodeURIComponent(token)+'/register',{method:'POST',body:JSON.stringify({contestId:id,mode:fi.mode,team,captain:players[0],players:players.slice(0,fi.need),phone,logo})});
+      ['Team','Captain','P1','P2','P3','P4','P5','Phone'].forEach(k=>{const e=document.getElementById('pubReg'+k);if(e)e.value=''});const file=document.getElementById('pubRegLogo');if(file)file.value='';window.__aktanRoomLogoData='';window.publicRegLogoData='';
+      st.textContent='✓ Registration submitted for '+r.title+'. Waiting for organizer approval.'; if(typeof populateRoomSelect==='function')populateRoomSelect(); if(typeof renderPublicRooms==='function')renderPublicRooms();
     }catch(e){st.textContent='⚠ '+e.message;}
   };
-  function addNotificationButton(){
-    if(isPublicViewer())return;
-    var box=document.getElementById('publicPendingBox');if(!box||document.getElementById('aktanNotifyBtn'))return;
-    var b=document.createElement('button');b.id='aktanNotifyBtn';b.type='button';b.className='secondary';b.style.marginTop='10px';b.textContent='🔔 Enable Registration Notifications';
-    b.onclick=async function(){
-      if(!('Notification' in window)){alert('This browser does not support notifications.');return;}
-      var p=await Notification.requestPermission();
-      if(p==='granted'){localStorage.setItem('AKTan_RegNotify_v1','1');b.textContent='🔔 Notifications Enabled';pollRegistrations(true);} else alert('Notification permission was not granted.');
-    };
-    box.parentNode.insertBefore(b,box.nextSibling);
-  }
-  var seenKey='AKTan_Seen_Public_Registrations_v1';
-  function seen(){try{return JSON.parse(localStorage.getItem(seenKey)||'[]');}catch(e){return[];}}
-  function saveSeen(a){try{localStorage.setItem(seenKey,JSON.stringify(a.slice(-200)));}catch(e){}}
-  async function pollRegistrations(first){
-    var token=getToken(),key=getKey();if(!token||!key||isPublicViewer())return;
+  window.approvePublicRegistration=async function(id){
+    const token=localStorage.getItem('AKTan_Public_Token_v1')||'',key=localStorage.getItem('AKTan_Public_AdminKey_v1')||'';
+    if(!token||!key){alert('Public link is not connected on this admin browser. Create/Publish the public link first.');return;}
     try{
-      var res=await fetch((location.origin||'')+'/api/admin/'+encodeURIComponent(token)+'/registrations',{headers:{'X-Admin-Key':key}});if(!res.ok)return;
-      var data=await res.json(), regs=Array.isArray(data.registrations)?data.registrations:[], old=seen(), fresh=regs.filter(function(r){return old.indexOf(String(r.id))<0;});
-      if(first){saveSeen(regs.map(function(r){return String(r.id);}));return;}
-      if(fresh.length && localStorage.getItem('AKTan_RegNotify_v1')==='1' && 'Notification' in window && Notification.permission==='granted'){
-        fresh.forEach(function(r){new Notification('AKTan — New Registration',{body:String(r.team||'New team')+' registered in '+String(r.contestTitle||'a room')});});
-      }
-      if(fresh.length)saveSeen(old.concat(fresh.map(function(r){return String(r.id);}))); 
-    }catch(e){}
-  }
-  function boot(){
-    if(!isPublicViewer()){
-      addNotificationButton();
-      setTimeout(function(){pollRegistrations(true);},1200);
-      setInterval(function(){pollRegistrations(false);},8000);
-    }
-    setTimeout(function(){fillSelect();},250);
-  }
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+      const d=await publicApi('/api/admin/'+encodeURIComponent(token)+'/registrations/'+encodeURIComponent(id),{method:'DELETE',headers:{'X-Admin-Key':key}}),r=d.registration;
+      if(!r)throw new Error('Registration data missing');
+      const t=newTeam(); t.name=String(r.team||'').trim();
+      if(!t.name){alert('This registration has no Team Name. Please reject it and ask the player to register again with a team name.');return;}
+      t.captain=r.captain||r.players?.[0]||''; t.phone=r.phone||''; t.players=(r.players||[]).slice(0,5); while(t.players.length<5)t.players.push('');
+      t.contestId=r.contestId||'';t.contestTitle=r.contestTitle||'';if(r.logo)t.logo=r.logo;
+      S.teams.push(t); syncSetupFromInputs(); saveLocalOnlyForV263(); renderAll(); await publishPublicShare(); await loadPendingPublicRegistrations();
+      toast('Registration approved and linked to Main Teams: '+t.name);
+    }catch(e){alert('Approval failed: '+e.message)}
+  };
+  function saveLocalOnlyForV263(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
+  function forceTeamField(){setVisible('pubRegTeamWrap',true);const e=document.getElementById('pubRegTeam');if(e)e.required=true;}
+  const oldPopulate=window.populateRoomSelect; if(oldPopulate){window.populateRoomSelect=function(){oldPopulate();setTimeout(()=>{forceTeamField();publicRoomSelected()},0)}}
+  setTimeout(()=>{forceTeamField(); if(document.getElementById('pubRegContest')?.value)publicRoomSelected()},50);
 })();
 </script>
 
