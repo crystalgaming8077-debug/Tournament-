@@ -12,3 +12,7 @@ This build keeps the V25 HTML as the UI and adds PostgreSQL-backed persistence t
 The server automatically creates the `aktan_publications` table. If a local `public-data.json` exists and the PostgreSQL table is empty, it migrates those publications once.
 
 Never commit `DATABASE_URL` or database passwords to GitHub.
+
+
+## V26 Public Contest Rooms
+Unlimited public rooms/contests with independent category, format, map, slot capacity, entry-fee display, prize pool, start time, status and rules. Public registration selects a room and the server enforces capacity including pending registrations. Entry fee is display/information only; payment collection, verification and refunds remain outside the app. Admin PIN can be changed from the Admin/Teams area.

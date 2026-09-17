@@ -8,7 +8,7 @@ const HOST = process.env.HOST || '0.0.0.0';
 const ROOT = __dirname;
 const HTML = path.join(ROOT, 'AKTan_Tournament_PointCalc_AKTAN_V25_PUBLIC_SPECTATOR.html');
 const DATA_FILE = path.join(ROOT, 'public-data.json');
-const VERSION = '25.2.0-postgres';
+const VERSION = '26.0.0-public-contests-postgres';
 
 let pg = null;
 let db = { publications: {} };
@@ -92,14 +92,20 @@ const server=http.createServer(async (req,res)=>{
     if(m && req.method==='POST'){
       const pub=await getPub(m[1]);if(!pub)return json(res,404,{error:'Public tournament not found'});const b=await readBody(req);
       const cfg=Object.assign({mode:'squad',logo:true,team:true,players:true,phone:true},pub.state.publicRegistration||{});
-      const mode=['solo','duo','squad'].includes(String(cfg.mode||'').toLowerCase())?String(cfg.mode).toLowerCase():'squad';
+      const contestId=clean(b.contestId,80);
+      const contests=Array.isArray(pub.state.publicContests)?pub.state.publicContests:[];
+      const contest=contestId?contests.find(x=>String(x.id)===contestId):null;
+      if(contests.length && !contest)return json(res,400,{error:'Please select a valid contest / room'});
+      if(contest){const max=Math.max(1,Math.min(1000,+contest.maxSlots||1));const approved=(pub.state.teams||[]).filter(t=>String(t.contestId||'')===contestId).length;const pending=pub.registrations.filter(r=>String(r.contestId||'')===contestId).length;if(approved+pending>=max)return json(res,409,{error:'This room is full. Please choose another room'});}
+      const fmt=String(contest?.format||'').toLowerCase();const roomMode=(fmt==='solo'||fmt==='1v1')?'solo':(fmt==='duo'||fmt==='2v2')?'duo':(fmt==='squad'||fmt==='3v3'||fmt==='4v4')?'squad':String(cfg.mode||'squad').toLowerCase();
+      const mode=['solo','duo','squad'].includes(roomMode)?roomMode:'squad';
       const team=clean(b.team,40),captain=clean(b.captain,40),phone=clean(b.phone,20),logo=typeof b.logo==='string'&&b.logo.startsWith('data:image/')?b.logo.slice(0,1500000):'',players=Array.isArray(b.players)?b.players.slice(0,5).map(x=>clean(x,40)):[];
       const need=mode==='solo'?1:mode==='duo'?2:4;
       if((cfg.team&&mode!=='solo'&&!team)||(cfg.phone&&!phone)||(cfg.logo&&!logo)||(cfg.players&&(players.length<need||players.slice(0,need).some(x=>!x))))return json(res,400,{error:'Registration does not match the organizer format'});
       const identity=(team||players[0]).toLowerCase();
       const exists=(pub.state.teams||[]).some(t=>String(t.name||'').trim().toLowerCase()===identity)||pub.registrations.some(r=>String(r.team||r.players?.[0]||'').toLowerCase()===identity);
       if(exists)return json(res,409,{error:'This team/player name is already registered or pending'});
-      const r={id:makeToken(),mode,team,captain:captain||players[0],players,phone,logo,createdAt:Date.now()};pub.registrations.push(r);pub.updatedAt=Date.now();await updatePub(pub);return json(res,201,{ok:true,id:r.id});
+      const r={id:makeToken(),contestId,contestTitle:contest?.title||'',mode,team,captain:captain||players[0],players,phone,logo,createdAt:Date.now()};pub.registrations.push(r);pub.updatedAt=Date.now();await updatePub(pub);return json(res,201,{ok:true,id:r.id});
     }
     m=u.pathname.match(/^\/api\/admin\/([^/]+)\/registrations$/);
     if(m && req.method==='GET'){const pub=await getPub(m[1]);if(!pub)return json(res,404,{error:'Public tournament not found'});if(!auth(pub,req))return json(res,403,{error:'Invalid admin key'});return json(res,200,{registrations:pub.registrations});}
