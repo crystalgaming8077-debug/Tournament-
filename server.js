@@ -8,7 +8,7 @@ const HOST = process.env.HOST || '0.0.0.0';
 const ROOT = __dirname;
 const HTML = path.join(ROOT, 'AKTan_Tournament_PointCalc_AKTAN_V25_PUBLIC_SPECTATOR.html');
 const DATA_FILE = path.join(ROOT, 'public-data.json');
-const VERSION = '26.2.0-room-registration-fix';
+const VERSION = '26.4.0-room-teams-leaderboard';
 
 let pg = null;
 let db = { publications: {} };
@@ -108,10 +108,10 @@ const server=http.createServer(async (req,res)=>{
       // For a combined format, allow the public form to submit whichever supported player count it displays.
       if(counts.length && !counts.includes(submittedCount))return json(res,400,{error:'This room accepts '+counts.map(n=>n+'v'+n).join(' or ')+'. Please fill the correct number of players.'});
       const mode=need===1?'solo':need===2?'duo':'squad';
-      const needsTeam=false; // public rooms support individual registration; team name is optional.
+      const needsTeam=true; // V26.3: every room registration must carry an explicit Team Name.
       const needsLogo=false;
       const needsPhone=true;
-      if((needsTeam&&!team)||(needsPhone&&!phone)||(needsLogo&&!logo)||submittedCount!==need||players.slice(0,need).some(x=>!x))return json(res,400,{error:'Please fill all required player names and phone number for this room.'});
+      if((needsTeam&&!team)||(needsPhone&&!phone)||submittedCount!==need||players.slice(0,need).some(x=>!x))return json(res,400,{error:'Please fill Team Name, all required player names and phone number for this room.'});
       const identity=(team||players[0]).toLowerCase();
       const exists=(pub.state.teams||[]).some(t=>String(t.name||'').trim().toLowerCase()===identity)||pub.registrations.some(r=>String(r.team||r.players?.[0]||'').toLowerCase()===identity);
       if(exists)return json(res,409,{error:'This team/player name is already registered or pending'});
