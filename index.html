@@ -2574,7 +2574,7 @@ load();ensurePrize();S.aktanLogo=S.aktanLogo||'';limitOrganizerNoteWords(documen
     if(c.players&&players.slice(0,needed).some(x=>!x)){document.getElementById('pubRegStatus').textContent='⚠ Please fill all required players for '+mode.toUpperCase()+'.';return}
     if(c.logo&&!publicRegLogoData){document.getElementById('pubRegStatus').textContent='⚠ Please select a '+(mode==='solo'?'player':'team')+' logo.';return}
     try{
-      await publicApi('/api/public/'+encodeURIComponent(token)+'/register',{method:'POST',body:JSON.stringify({mode,team:c.team?team:'',captain:captain||players[0]||'',players:c.players?players.slice(0,mode==='solo'?1:mode==='duo'?2:5):[],phone:c.phone?phone:'',logo:c.logo?publicRegLogoData:''})});
+      await publicApi('/api/public/'+encodeURIComponent(token)+'/register',{method:'POST',body:JSON.stringify({contestId:document.getElementById('pubRegContest')?.value||'',mode,team:c.team?team:'',captain:captain||players[0]||'',players:c.players?players.slice(0,mode==='solo'?1:mode==='duo'?2:5):[],phone:c.phone?phone:'',logo:c.logo?publicRegLogoData:''})});
       ['Team','Captain','P1','P2','P3','P4','P5','Phone'].forEach(k=>{const e=document.getElementById('pubReg'+k);if(e)e.value=''});const file=document.getElementById('pubRegLogo');if(file)file.value='';publicRegLogoData='';const prev=document.getElementById('pubRegLogoPreview');if(prev)prev.textContent='No logo selected';document.getElementById('pubRegStatus').textContent='✓ Registration submitted. Waiting for organizer approval.';
     }catch(e){document.getElementById('pubRegStatus').textContent='⚠ '+e.message}
   };
@@ -2582,9 +2582,30 @@ load();ensurePrize();S.aktanLogo=S.aktanLogo||'';limitOrganizerNoteWords(documen
   window.approvePublicRegistration=async function(id){if(!publicToken||!publicAdminKey)return;try{const d=await publicApi('/api/admin/'+encodeURIComponent(publicToken)+'/registrations/'+encodeURIComponent(id),{method:'DELETE',headers:{'X-Admin-Key':publicAdminKey}});const r=d.registration;if(r){const t=newTeam();t.name=r.team||r.players?.[0]||'Solo Player';t.captain=r.captain||r.players?.[0]||'';t.players=(r.players||[]).slice(0,5);while(t.players.length<5)t.players.push('');if(r.logo)t.logo=r.logo;S.teams.push(t);syncSetupFromInputs();renderAll();await publishPublicShare();}await loadPendingPublicRegistrations();}catch(e){alert('Approval failed: '+e.message)}};
   async function bootRemotePublic(){const token=new URLSearchParams(location.search).get('publicToken');if(!token)return;try{document.body.classList.add('publicModeBody');const d=await publicApi('/api/public/'+encodeURIComponent(token)+'/state');if(!d.state)throw new Error('Public tournament not found');S=Object.assign(S,d.state,{publicMode:true});ensurePrize();renderAll();document.getElementById('publicApp').style.display='block';renderPublicApp();publicRegModeChanged();publicSection('pubHome');}catch(e){const app=document.getElementById('publicApp');if(app){app.style.display='block';app.innerHTML='<div class="publicHero"><h1>Public link unavailable</h1><div>'+esc(e.message)+'</div></div>'}}}
   window.publicAdminLogin=async function(){const token=new URLSearchParams(location.search).get('publicToken');if(!token){alert('Open the public tournament link first.');return}const password=prompt('Enter Admin Password / PIN:');if(password===null)return;if(!password){alert('Please enter the Admin Password.');return}try{const d=await publicApi('/api/public/'+encodeURIComponent(token)+'/admin-login',{method:'POST',body:JSON.stringify({password})});publicToken=token;publicAdminKey=d.adminKey;remoteAdminSession=true;localStorage.setItem(PUB_TOKEN_KEY,publicToken);localStorage.setItem(PUB_ADMIN_KEY,publicAdminKey);S=Object.assign(S,d.state,{publicMode:false});document.body.classList.remove('publicModeBody');const app=document.getElementById('publicApp');if(app)app.style.display='none';renderAll();syncPublicAdminRegistrationUI();toast('🔓 Admin editing enabled');}catch(e){alert('Admin login failed: '+e.message)}};
+  let remoteSyncTimer=0,remoteSyncBusy=false;
+  async function syncRemoteAdminState(){
+    if(!remoteAdminSession||!publicToken||!publicAdminKey||remoteSyncBusy)return;
+    remoteSyncBusy=true;
+    try{
+      syncSetupFromInputs();
+      await publicApi('/api/public/'+encodeURIComponent(publicToken)+'/state',{method:'PUT',headers:{'X-Admin-Key':publicAdminKey},body:JSON.stringify({state:S,adminPassword:S.adminPin||''})});
+      setPublicUI('✓ Remote database synced '+new Date().toLocaleTimeString()+'.');
+    }catch(e){toast('⚠ Remote sync failed: '+e.message)}
+    finally{remoteSyncBusy=false;}
+  }
   const _aktanOriginalSave=save;
-  save=function(){_aktanOriginalSave();if(remoteAdminSession&&publicToken&&publicAdminKey){publishPublicShare().catch(e=>toast('⚠ Remote sync failed: '+e.message));}};
-  window.addEventListener('load',()=>{publicRegModeChanged();setPublicUI(publicToken?'Public link ready. Click Publish / Sync after changes.':'Public sharing is not connected.');if(!new URLSearchParams(location.search).get('publicToken')){syncPublicAdminRegistrationUI();loadPendingPublicRegistrations();}else bootRemotePublic();});
+  save=function(){
+    _aktanOriginalSave();
+    if(remoteAdminSession&&publicToken&&publicAdminKey){clearTimeout(remoteSyncTimer);remoteSyncTimer=setTimeout(syncRemoteAdminState,200);}
+  };
+  window.addEventListener('load',()=>{
+    publicRegModeChanged();
+    setPublicUI(publicToken?'Public link ready. Click Publish / Sync after changes.':'Public sharing is not connected.');
+    if(!new URLSearchParams(location.search).get('publicToken')){syncPublicAdminRegistrationUI();loadPendingPublicRegistrations();}
+    else bootRemotePublic();
+    document.addEventListener('change',()=>{if(remoteAdminSession&&!document.body.classList.contains('publicModeBody')){clearTimeout(remoteSyncTimer);remoteSyncTimer=setTimeout(syncRemoteAdminState,350);}},true);
+    document.addEventListener('input',()=>{if(remoteAdminSession&&!document.body.classList.contains('publicModeBody')){clearTimeout(remoteSyncTimer);remoteSyncTimer=setTimeout(syncRemoteAdminState,600);}},true);
+  });
   setInterval(()=>{if(!new URLSearchParams(location.search).get('publicToken')&&publicToken&&publicAdminKey)loadPendingPublicRegistrations()},15000);
 })();
 </script>
