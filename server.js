@@ -24,7 +24,9 @@ function json(res,status,data){
   res.end(body);
 }
 function readBody(req){return new Promise((resolve,reject)=>{let b='';req.on('data',c=>{b+=c;if(b.length>8e6)req.destroy();});req.on('end',()=>{try{resolve(b?JSON.parse(b):{})}catch(e){reject(e)}});req.on('error',reject)})}
-function safeState(s){ if(!s || typeof s!=='object') return null; const x=JSON.parse(JSON.stringify(s)); delete x.adminPin; delete x.publicMode; return x; }
+function safeState(s){ if(!s || typeof s!=='object') return null; const x=JSON.parse(JSON.stringify(s)); delete x.adminPin; delete x.publicMode; delete x._aktanAdminPasswordHash; return x; }
+function passwordHash(v){ return crypto.createHash('sha256').update(String(v||'')).digest('hex'); }
+function publicState(pub){ const x=JSON.parse(JSON.stringify(pub.state||{})); delete x._aktanAdminPasswordHash; return x; }
 function auth(pub,req){return String(req.headers['x-admin-key']||'')===pub.adminKey}
 function clean(v,max=60){return String(v||'').trim().slice(0,max)}
 function makeToken(){return crypto.randomBytes(18).toString('base64url')}
@@ -80,14 +82,16 @@ const server=http.createServer(async (req,res)=>{
   try{
     if(req.method==='POST' && u.pathname==='/api/public/create'){
       const b=await readBody(req);const state=safeState(b.state);if(!state)return json(res,400,{error:'Invalid tournament state'});
-      const token=makeToken(),adminKey=makeKey(),pub={token,adminKey,state,registrations:[],updatedAt:Date.now()};
+      const token=makeToken(),adminKey=makeKey(),pub={token,adminKey,state,registrations:[],updatedAt:Date.now()}; if(b.state&&b.state.adminPin)pub.state._aktanAdminPasswordHash=passwordHash(b.state.adminPin);
       await createPub(pub); return json(res,200,{token,adminKey,url:origin(req)+'/?publicToken='+encodeURIComponent(token)});
     }
     let m=u.pathname.match(/^\/api\/public\/([^/]+)\/state$/);
     if(m){const pub=await getPub(m[1]);if(!pub)return json(res,404,{error:'Public tournament not found'});
-      if(req.method==='GET')return json(res,200,{state:pub.state,updatedAt:pub.updatedAt});
-      if(req.method==='PUT'){if(!auth(pub,req))return json(res,403,{error:'Invalid admin key'});const b=await readBody(req),state=safeState(b.state);if(!state)return json(res,400,{error:'Invalid state'});pub.state=state;pub.updatedAt=Date.now();await updatePub(pub);return json(res,200,{ok:true,updatedAt:pub.updatedAt});}
+      if(req.method==='GET')return json(res,200,{state:publicState(pub),updatedAt:pub.updatedAt});
+      if(req.method==='PUT'){if(!auth(pub,req))return json(res,403,{error:'Invalid admin key'});const b=await readBody(req),state=safeState(b.state);if(!state)return json(res,400,{error:'Invalid state'});if(b.adminPassword!==undefined&&String(b.adminPassword).length)state._aktanAdminPasswordHash=passwordHash(b.adminPassword);else if(pub.state&&pub.state._aktanAdminPasswordHash)state._aktanAdminPasswordHash=pub.state._aktanAdminPasswordHash;pub.state=state;pub.updatedAt=Date.now();await updatePub(pub);return json(res,200,{ok:true,updatedAt:pub.updatedAt});}
     }
+    m=u.pathname.match(/^\/api\/public\/([^/]+)\/admin-login$/);
+    if(m && req.method==='POST'){const pub=await getPub(m[1]);if(!pub)return json(res,404,{error:'Public tournament not found'});const b=await readBody(req);const hash=pub.state&&pub.state._aktanAdminPasswordHash;if(!hash)return json(res,403,{error:'Admin password is not configured. Open the main app, set an Admin PIN, then Publish / Sync.'});if(passwordHash(b.password)!==hash)return json(res,403,{error:'Invalid admin password'});return json(res,200,{ok:true,adminKey:pub.adminKey,state:publicState(pub),updatedAt:pub.updatedAt});}
     m=u.pathname.match(/^\/api\/public\/([^/]+)\/register$/);
     if(m && req.method==='POST'){
       const pub=await getPub(m[1]);if(!pub)return json(res,404,{error:'Public tournament not found'});const b=await readBody(req);
