@@ -2517,7 +2517,7 @@ const renderAllV7=renderAll;renderAll=function(){renderAllV7();setupOCRMatch();}
 
 setupAutoOCR();
 
-load();ensurePrize();S.aktanLogo=S.aktanLogo||'';limitOrganizerNoteWords(document.getElementById('organizerNote'));S.organizerColor=S.organizerColor||'gold';S.boardTheme=S.boardTheme||'purpleAnime';S.boardCharacter=S.boardCharacter||'cyber';S.posterTheme=S.posterTheme||S.boardTheme;S.slotTheme=S.slotTheme||S.boardTheme;S.boardBg=S.boardBg||'dark';if(S.publicMode)document.body.classList.add('publicModeBody');renderAll();syncPublicAdminRegistrationUI();if(S.publicMode){document.getElementById('publicApp').style.display='block';renderPublicApp();publicSection('pubHome')}enableAutoSaveSetup();
+load();ensurePrize();S.aktanLogo=S.aktanLogo||'';limitOrganizerNoteWords(document.getElementById('organizerNote'));S.organizerColor=S.organizerColor||'gold';S.boardTheme=S.boardTheme||'purpleAnime';S.boardCharacter=S.boardCharacter||'cyber';S.posterTheme=S.posterTheme||S.boardTheme;S.slotTheme=S.slotTheme||S.boardTheme;S.boardBg=S.boardBg||'dark';if(!new URLSearchParams(location.search).get('publicToken')){S.publicMode=false;document.body.classList.remove('publicModeBody');}else if(S.publicMode){document.body.classList.add('publicModeBody');}renderAll();syncPublicAdminRegistrationUI();if(S.publicMode){document.getElementById('publicApp').style.display='block';renderPublicApp();publicSection('pubHome')}enableAutoSaveSetup();
 </script>
 <script>
 /* V25 Public Spectator bridge — keeps V24 OCR untouched. */

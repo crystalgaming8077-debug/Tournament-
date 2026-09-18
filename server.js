@@ -126,7 +126,8 @@ const server=http.createServer(async (req,res)=>{
     m=u.pathname.match(/^\/api\/admin\/([^/]+)\/registrations\/([^/]+)$/);
     if(m && req.method==='DELETE'){const pub=await getPub(m[1]);if(!pub)return json(res,404,{error:'Public tournament not found'});if(!auth(pub,req))return json(res,403,{error:'Invalid admin key'});const i=pub.registrations.findIndex(r=>r.id===m[2]);if(i<0)return json(res,404,{error:'Registration not found'});const r=pub.registrations.splice(i,1)[0];pub.updatedAt=Date.now();await updatePub(pub);return json(res,200,{registration:r});}
 
-    if(req.method==='GET' && (u.pathname==='/'||u.pathname==='/index.html')){const html=fs.readFileSync(HTML);res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});return res.end(html);}
+    if(req.method==='GET' && u.pathname==='/'){const file=u.searchParams.has('publicToken')?HTML:path.join(ROOT,'index.html');const html=fs.readFileSync(file);res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});return res.end(html);}
+    if(req.method==='GET' && u.pathname==='/index.html'){const html=fs.readFileSync(path.join(ROOT,'index.html'));res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});return res.end(html);}
     if(req.method==='GET' && u.pathname==='/health')return json(res,200,{ok:true,publications:await countPubs(),persistentStore:!!pg,version:VERSION});
     res.writeHead(404,{'Content-Type':'text/plain'});res.end('Not found');
   }catch(e){console.error(e);json(res,500,{error:'Server error: '+e.message})}
